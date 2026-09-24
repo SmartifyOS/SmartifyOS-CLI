@@ -31,6 +31,8 @@ const sealedEnv = {
 
 async function runCli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
 	const proc = Bun.spawn([process.execPath, 'run', entry, ...args], {
+		// Somewhere with no car and no extension above it, whoever runs the tests.
+		cwd: stateDir,
 		stdout: 'pipe',
 		stderr: 'pipe',
 		env: { ...process.env, ...sealedEnv },
@@ -121,13 +123,46 @@ describe('smartify-os', () => {
 		}
 	});
 
-	// `update` is being kept free for updating the car project, so it must not quietly do
-	// something else in the meantime, and it must not leave the user stuck either.
-	test('update is not a command yet, and says where to go instead', async () => {
-		const { code, stdout, stderr } = await runCli(['update']);
+	// Nearly every command acts on a car, so outside one they have to say so, not crash.
+	test('a car command outside a car says where to run it', async () => {
+		for (const args of [['update'], ['extension', 'list'], ['link', '.'], ['unlink']]) {
+			const { code, stdout, stderr } = await runCli(args);
+			expect(code).toBe(1);
+			expect(stdout + stderr).toContain('There is no SmartifyOS car here');
+		}
+	});
+
+	test('extension --help lists what it can do', async () => {
+		const { code, stdout } = await runCli(['extension', '--help']);
+		expect(code).toBe(0);
+		for (const name of ['add', 'update', 'remove', 'list', 'create', 'run', 'release']) {
+			expect(stdout).toContain(`    ${name} `);
+		}
+	});
+
+	test('help extension add explains that one', async () => {
+		const { code, stdout } = await runCli(['help', 'extension', 'add']);
+		expect(code).toBe(0);
+		expect(stdout).toContain('smartify-os extension add <url> [options]');
+		expect(stdout).toContain('--version');
+	});
+
+	test('extension on its own outside a terminal prints its commands', async () => {
+		const { code, stdout } = await runCli(['extension']);
+		expect(code).toBe(0);
+		expect(stdout).toContain('smartify-os extension <command> [options]');
+	});
+
+	test('an unknown subcommand fails readably', async () => {
+		const { code, stdout, stderr } = await runCli(['extension', 'nonsense']);
 		expect(code).toBe(1);
-		expect(stdout + stderr).toContain('There is no command called update');
-		expect(stdout + stderr).toContain('smartify-os self-update');
+		expect(stdout + stderr).toContain('There is no command called extension nonsense');
+	});
+
+	test('an extension command outside an extension says where to run it', async () => {
+		const { code, stdout, stderr } = await runCli(['extension', 'run']);
+		expect(code).toBe(1);
+		expect(stdout + stderr).toContain('There is no extension here');
 	});
 
 	// `smartify-os --help | head` closes the pipe early. That has to be silent, not an

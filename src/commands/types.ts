@@ -48,8 +48,15 @@ export interface Command {
 	description?: string;
 	/** Example command lines shown under the flags in `--help`. */
 	examples?: string[];
+	/** What goes after the name besides the flags, shown in `--help`: `<url>`, `[name]`. */
+	usage?: string;
 	/** Flags this command accepts, on top of the global ones. */
 	flags?: Record<string, FlagSpec>;
+	/**
+	 * Commands grouped under this one, typed after its name: `extension add`. The group's
+	 * own `run` is what happens when none of them is named.
+	 */
+	subcommands?: Command[];
 	/** Hide from the command list. For internal or experimental commands. */
 	hidden?: boolean;
 	/**

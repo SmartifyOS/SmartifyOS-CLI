@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { compareVersions, isNewer, parseVersion } from './semver.ts';
+import { compareVersions, isNewer, lowerBound, meetsLowerBound, parseVersion } from './semver.ts';
 
 describe('parseVersion', () => {
 	test('reads a plain version', () => {
@@ -99,5 +99,44 @@ describe('isNewer', () => {
 		expect(isNewer('nonsense', '0.1.1')).toBe(false);
 		expect(isNewer('0.2.0', 'nonsense')).toBe(false);
 		expect(isNewer('', '')).toBe(false);
+	});
+});
+
+describe('lowerBound', () => {
+	test('reads every shape an extension writes', () => {
+		expect(lowerBound('>=0.2.0')).toBe('0.2.0');
+		expect(lowerBound('>=0.2.0 <1.0.0')).toBe('0.2.0');
+		expect(lowerBound('^0.2.0')).toBe('0.2.0');
+		expect(lowerBound('0.2.0')).toBe('0.2.0');
+		expect(lowerBound('>= 0.2.0')).toBe('0.2.0');
+	});
+
+	test('any, nothing and a git or path source mean there is no bound', () => {
+		expect(lowerBound('any')).toBeUndefined();
+		expect(lowerBound(undefined)).toBeUndefined();
+		expect(lowerBound(null)).toBeUndefined();
+		expect(lowerBound({ git: 'https://example.com' })).toBeUndefined();
+	});
+});
+
+describe('meetsLowerBound', () => {
+	test('the bound itself fits, anything older does not', () => {
+		expect(meetsLowerBound('>=0.2.0', '0.2.0')).toBe(true);
+		expect(meetsLowerBound('>=0.2.0', '0.3.1')).toBe(true);
+		expect(meetsLowerBound('>=0.2.0', '0.1.9')).toBe(false);
+	});
+
+	test('a strict bound leaves out the version it names', () => {
+		expect(meetsLowerBound('>0.2.0', '0.2.0')).toBe(false);
+		expect(meetsLowerBound('>0.2.0', '0.2.1')).toBe(true);
+	});
+
+	test('no bound fits everything', () => {
+		expect(meetsLowerBound('any', '0.0.1')).toBe(true);
+		expect(meetsLowerBound(undefined, '0.0.1')).toBe(true);
+	});
+
+	test('an upper bound is not what this checks', () => {
+		expect(meetsLowerBound('>=0.2.0 <0.3.0', '0.5.0')).toBe(true);
 	});
 });

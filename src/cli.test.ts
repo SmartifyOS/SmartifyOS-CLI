@@ -156,12 +156,58 @@ describe('the commands that ship', () => {
 		expect(result.command?.name).toBe('self-update');
 	});
 
-	// `update` is deliberately not taken, so it stays free for updating the car project.
-	// Somebody who types it should still be pointed at the right thing.
-	test('update is not a command, but it does suggest self-update', () => {
-		const result = parse(['update']);
+	// `update` means the car project, which is why the CLI's own is called `self-update`.
+	test('update is the car project, self-update is the CLI', () => {
+		for (const [name, expected] of [
+			['update', 'update'],
+			['upgrade', 'update'],
+			['self-update', 'self-update'],
+		]) {
+			const result = parse([name ?? '']);
+			expect(result.kind).toBe('command');
+			if (result.kind === 'command') expect(result.command.name).toBe(expected ?? '');
+		}
+	});
+
+	test('a subcommand is found under its group, with its own flags', () => {
+		const result = parse(['extension', 'add', 'someone/dashcam', '--version', '0.2.0']);
+		expect(result.kind).toBe('command');
+		if (result.kind !== 'command') return;
+		expect(result.parent?.name).toBe('extension');
+		expect(result.command.name).toBe('add');
+		expect(result.positionals).toEqual(['someone/dashcam']);
+		expect(result.flags.version).toBe('0.2.0');
+	});
+
+	test('a group and a subcommand answer to their aliases', () => {
+		const result = parse(['ext', 'ls']);
+		expect(result.kind).toBe('command');
+		if (result.kind === 'command') expect(result.command.name).toBe('list');
+	});
+
+	test('a group on its own runs the group', () => {
+		const result = parse(['extension']);
+		expect(result.kind).toBe('command');
+		if (result.kind === 'command') expect(result.command.name).toBe('extension');
+	});
+
+	test('--help after a subcommand explains that subcommand', () => {
+		const result = parse(['extension', 'create', '--help']);
+		expect(result.kind).toBe('help');
+		if (result.kind !== 'help') return;
+		expect(result.command?.name).toBe('create');
+		expect(result.parent?.name).toBe('extension');
+	});
+
+	test('a mistyped subcommand suggests the right one', () => {
+		const result = parse(['extension', 'remvoe']);
 		expect(result.kind).toBe('unknown');
 		if (result.kind !== 'unknown') return;
-		expect(result.suggestion).toBe('self-update');
+		expect(result.name).toBe('extension remvoe');
+		expect(result.suggestion).toBe('extension remove');
+	});
+
+	test('a flag the subcommand does not take is an error', () => {
+		expect(() => parse(['extension', 'list', '--version', '1'])).toThrow(CliError);
 	});
 });

@@ -44,19 +44,36 @@ export function renderRootHelp(list: readonly Command[]): void {
 	writeLine();
 }
 
-/** Prints what one command does, what it takes, and how it is used. */
-export function renderCommandHelp(command: Command): void {
+/**
+ * Prints what one command does, what it takes, and how it is used. `parent` is the group
+ * it is in, for `extension add`.
+ */
+export function renderCommandHelp(command: Command, parent?: Command): void {
+	const fullName = parent ? `${parent.name} ${command.name}` : command.name;
+	const takes = command.subcommands?.length ? '<command>' : command.usage;
+
 	writeLine();
-	writeLine(`  ${theme.strong(`${binaryName} ${command.name}`)}`);
+	writeLine(`  ${theme.strong(`${binaryName} ${fullName}`)}`);
 	writeLine(`  ${theme.dim(command.description ?? command.summary)}`);
 	writeLine();
 	writeLine(`  ${theme.strong('Usage')}`);
-	writeLine(`    ${binaryName} ${command.name} ${theme.dim('[options]')}`);
+	writeLine(`    ${binaryName} ${fullName} ${theme.dim(`${takes ? `${takes} ` : ''}[options]`)}`);
 
 	if (command.aliases?.length) {
+		const prefix = parent ? `${binaryName} ${parent.name}` : binaryName;
 		writeLine();
 		writeLine(`  ${theme.strong('Also known as')}`);
-		writeLine(`    ${command.aliases.map((alias) => `${binaryName} ${alias}`).join(', ')}`);
+		writeLine(`    ${command.aliases.map((alias) => `${prefix} ${alias}`).join(', ')}`);
+	}
+
+	const subcommands = command.subcommands?.filter((c) => !c.hidden) ?? [];
+	if (subcommands.length > 0) {
+		const width = Math.max(...subcommands.map((c) => c.name.length));
+		writeLine();
+		writeLine(`  ${theme.strong('Commands')}`);
+		for (const c of subcommands) {
+			writeLine(`    ${c.name.padEnd(width)}  ${theme.dim(c.summary)}`);
+		}
 	}
 
 	renderFlags({ ...globalFlags, ...command.flags });
@@ -67,6 +84,13 @@ export function renderCommandHelp(command: Command): void {
 		for (const example of command.examples) {
 			writeLine(`    ${theme.dim(example)}`);
 		}
+	}
+
+	if (subcommands.length > 0) {
+		writeLine();
+		writeLine(
+			`  ${theme.dim(`${symbols.arrow} Run ${theme.code(`${binaryName} help ${command.name} <command>`)} to read about one of them.`)}`,
+		);
 	}
 
 	writeLine();

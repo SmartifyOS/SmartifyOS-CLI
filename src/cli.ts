@@ -16,9 +16,9 @@ export { binaryName, globalFlags };
 /** What the command line asked for. */
 export type ParseResult =
 	| { kind: 'version' }
-	| { kind: 'help'; command?: Command }
+	| { kind: 'help'; command?: Command; parent?: Command }
 	| { kind: 'menu' }
-	| { kind: 'command'; command: Command; flags: Flags; positionals: string[] }
+	| { kind: 'command'; command: Command; parent?: Command; flags: Flags; positionals: string[] }
 	| { kind: 'unknown'; name: string; suggestion: string | undefined };
 
 /**
@@ -49,12 +49,40 @@ export function parse(argv: string[]): ParseResult {
 		return { kind: 'unknown', name, suggestion: closest(name, names) };
 	}
 
+	const subIndex = rest.findIndex((arg) => !arg.startsWith('-'));
+	if (command.subcommands && subIndex !== -1) {
+		const subName = rest[subIndex] ?? '';
+		const subcommand = findIn(command.subcommands, subName);
+		if (!subcommand) {
+			const names = command.subcommands.filter((c) => !c.hidden).map((c) => c.name);
+			const suggestion = closest(subName, names);
+			return {
+				kind: 'unknown',
+				name: `${command.name} ${subName}`,
+				suggestion: suggestion ? `${command.name} ${suggestion}` : undefined,
+			};
+		}
+
+		const subRest = [...rest.slice(0, subIndex), ...rest.slice(subIndex + 1)];
+		const spec = { ...globalFlags, ...subcommand.flags };
+		const context = `${binaryName} ${command.name} ${subcommand.name}`;
+		const { values, positionals } = parseFlagsAndPositionals(subRest, spec, context);
+
+		if (values.help === true) return { kind: 'help', command: subcommand, parent: command };
+		return { kind: 'command', command: subcommand, parent: command, flags: values, positionals };
+	}
+
 	const spec = { ...globalFlags, ...command.flags };
 	const { values, positionals } = parseFlagsAndPositionals(rest, spec, `${binaryName} ${name}`);
 
 	if (values.help === true) return { kind: 'help', command };
 
 	return { kind: 'command', command, flags: values, positionals };
+}
+
+/** Internal: a command in a list by its name or one of its aliases. */
+function findIn(list: Command[], name: string): Command | undefined {
+	return list.find((c) => c.name === name || c.aliases?.includes(name));
 }
 
 /** Internal: parseArgs for flags only, with its errors turned into readable ones. */
@@ -102,7 +130,7 @@ export async function run(argv: string[]): Promise<number> {
 			return ExitCode.ok;
 
 		case 'help':
-			renderHelp(result.command);
+			renderHelp(result.command, result.parent);
 			return ExitCode.ok;
 
 		case 'menu':
@@ -122,7 +150,7 @@ export async function run(argv: string[]): Promise<number> {
 }
 
 /** Prints the help for one command, or for the whole CLI when no command is given. */
-export function renderHelp(command?: Command): void {
-	if (command) renderCommandHelp(command);
+export function renderHelp(command?: Command, parent?: Command): void {
+	if (command) renderCommandHelp(command, parent);
 	else renderRootHelp(visibleCommands());
 }

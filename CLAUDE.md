@@ -18,7 +18,8 @@ Runtime dependencies are deliberately kept to two. Think before adding a third.
 ```
 src/index.ts        entry point, the only place that ends the process
 src/cli.ts          parse() and run()
-src/commands/       one file per command, switched on in commands/index.ts
+src/commands/       one file per command, switched on in commands/index.ts. A group
+                    like `extension` has a folder, one file per subcommand
 src/ui/             anything that talks to the terminal, including help rendering
 src/core/           process runners, config, paths, the real work
 src/utils/          small helpers with no opinion about the terminal
@@ -40,9 +41,17 @@ needs the help renderer while the help renderer needs the list of commands:
 
 ## Naming commands
 
-Nearly every command acts on the user's car project, so **the project is the default and never needs saying**. It is `build`, not `project build`, and one day it will be `update` for updating the project itself.
+Nearly every command acts on the user's car project, so **the project is the default and never needs saying**. It is `build`, not `project build`, and `update` moves the project to a newer SmartifyOS.
 
-Anything acting on the CLI instead is the exception and says so: `self-update`. That is why the command is not called `update`, and why `update` must stay unclaimed until it means the project.
+Anything acting on the CLI instead is the exception and says so: `self-update`.
+
+Commands about one kind of thing are grouped under it, `extension add`, `extension create`. A group is a `Command` with `subcommands`, and the parser, help and menu handle the rest.
+
+## Changing a car's app
+
+A car's `pubspec.yaml` names where SmartifyOS and every extension come from, under `dependency_overrides`, and that block is the CLI's (see `src/core/project/block.ts`). It is edited line by line with `src/core/pubspec/blocks.ts`, never parsed and written back, so the owner's comments survive.
+
+**Every change to what a car runs goes through `tryChange`** in `src/core/project/change.ts`. Pub never checks an extension's SmartifyOS lower bound (the override hides it), so fetching and analyzing, and putting every file back on errors, is the only check there is. It analyzes each extension's `lib` with the app's `package_config.json`: `flutter analyze` on the app alone never reports errors inside a dependency.
 
 ## Writing style
 

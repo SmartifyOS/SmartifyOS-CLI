@@ -5,7 +5,7 @@ The command line tool for [SmartifyOS](https://smartify-os.com/), the open sourc
 It does the complicated parts for you. You should never have to touch `flutter`, `git` or `adb` to build a system for your car.
 
 > [!NOTE]
-> This is early days. The tool installs, runs, builds and keeps itself up to date. The commands for setting up and building a car system are still on their way.
+> This is early days. The tool keeps your car's SmartifyOS and extensions up to date, helps you make your own extensions, and keeps itself up to date. The commands for setting up and building a car system are still on their way.
 
 ## Install
 
@@ -39,6 +39,34 @@ Set these before running the installer if you want something other than the defa
 | `SMARTIFY_OS_INSTALL_DIR`    | Install somewhere other than `~/.smartify-os/bin`                       |
 | `SMARTIFY_OS_NO_MODIFY_PATH` | Leave your shell config alone                                           |
 | `SMARTIFY_OS_BASE_URL`       | Download from a mirror instead of GitHub                                |
+
+## Your car
+
+Run these in your car's app folder, the one with `pubspec.yaml` in it.
+
+```bash
+smartify-os update                     # move your car to the newest SmartifyOS
+smartify-os extension add <url>        # add an extension from its GitHub address
+smartify-os extension update           # move your extensions to their newest releases
+smartify-os extension remove <name>    # take one out again
+smartify-os extension list             # what your car runs, and which versions
+```
+
+Every one of them tries the change before it keeps it: it fetches the new versions and checks that your app and every extension still build. If anything does not, it puts everything back the way it was and tells you which extension is at fault. A new SmartifyOS that an extension has not caught up with yet is not a problem: the update offers that extension's newest release along with it, or leaves your car as it was when there is none.
+
+Adding an extension also switches it on in `lib/main.dart` for you, and removing one takes it out again.
+
+## Making an extension
+
+```bash
+smartify-os extension create           # a new extension, with tests and an example app
+smartify-os extension run              # try it in SmartifyOS on this computer
+smartify-os link ../smartify_os_dashcam  # try it in your own car, from your car's app folder
+smartify-os unlink                     # and back to the released versions
+smartify-os extension release          # release a new version, so cars can update to it
+```
+
+`EXTENSIONS.md` in the [SmartifyOS repository](https://github.com/Mauznemo/smartify_os_flutter_test) is the full guide.
 
 ## Keeping it up to date
 
@@ -112,5 +140,7 @@ bun install
 | `bun run build:all`     | Build all eight published targets            |
 | `bun run install:dev`   | Put `smartify-os` on your PATH, running live from source with no rebuild |
 | `bun run install:local` | Same, but installs the real compiled binary  |
+
+Set `SMARTIFY_OS_CORE_REPO` to another SmartifyOS repository, for example a local one as `file:///path/to/repo`, to try the car and extension commands against releases that are not published.
 
 `install:dev` is the one to use while working on it. It installs to `~/.smartify-os/bin` just like the real installer, so you can run `smartify-os` from inside an actual car project, and your edits take effect straight away.

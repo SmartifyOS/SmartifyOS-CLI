@@ -1,6 +1,6 @@
 /**
- * Just enough of semver to answer one question: is the release GitHub is offering newer
- * than the one that is installed?
+ * Just enough of semver to answer two questions: is the release GitHub is offering newer
+ * than the one that is installed, and does a version meet the lower bound in a pubspec?
  *
  * This is deliberately not a semver library. It compares two version strings that this
  * project itself published, so it can afford to be small and to treat anything it does not
@@ -108,4 +108,45 @@ export function isNewer(candidate: string, current: string): boolean {
 	if (next.prerelease.length > 0 && now.prerelease.length === 0) return false;
 
 	return compareVersions(candidate, current) > 0;
+}
+
+/**
+ * The oldest version a pub version constraint allows, when it says.
+ *
+ * Reads the shapes an extension uses for `smartify_os_core`: `">=0.2.0"`, `">=0.2.0 <1.0.0"`,
+ * `^0.2.0` and a bare `0.2.0`. Undefined for `any`, for no constraint at all, and for
+ * anything it cannot read, all of which mean "no lower bound" to the caller.
+ */
+export function lowerBound(constraint: unknown): string | undefined {
+	return readLowerBound(constraint)?.version;
+}
+
+/**
+ * Whether `version` is at or above the lower bound of `constraint`.
+ *
+ * Only the lower bound is checked. Extensions are asked not to give an upper one, and when one
+ * does, trying the change is what finds out whether it really does not fit.
+ */
+export function meetsLowerBound(constraint: unknown, version: string): boolean {
+	const bound = readLowerBound(constraint);
+	if (!bound) return true;
+	const order = compareVersions(version, bound.version);
+	return bound.inclusive ? order >= 0 : order > 0;
+}
+
+/** Internal: the lower bound and whether it is itself allowed (`>=`) or not (`>`). */
+function readLowerBound(constraint: unknown): { version: string; inclusive: boolean } | undefined {
+	if (typeof constraint !== 'string') return undefined;
+
+	// Pub allows a space after the operator, so join it back on before splitting.
+	for (const token of constraint
+		.trim()
+		.replace(/(>=|>|\^)\s+/g, '$1')
+		.split(/\s+/)) {
+		const match = /^(>=|>|\^)?\s*(v?\d[^\s<>=]*)$/.exec(token);
+		if (!match?.[2] || !parseVersion(match[2])) continue;
+		return { version: match[2].replace(/^v/, ''), inclusive: match[1] !== '>' };
+	}
+
+	return undefined;
 }
