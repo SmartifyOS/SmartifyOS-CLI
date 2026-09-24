@@ -26,15 +26,22 @@ export class CliError extends Error {
 	readonly hint: string | undefined;
 	/** Code the process exits with. Defaults to 1. */
 	readonly exitCode: number;
+	/**
+	 * What went wrong as data, for a program reading `--json`, for example the build errors
+	 * of a change that did not fit. Never shown to a person, so it must not be the only place
+	 * something they need to know is said.
+	 */
+	readonly details: unknown;
 
 	constructor(
 		message: string,
-		options: { hint?: string; exitCode?: number; cause?: unknown } = {},
+		options: { hint?: string; exitCode?: number; cause?: unknown; details?: unknown } = {},
 	) {
 		super(message, { cause: options.cause });
 		this.name = 'CliError';
 		this.hint = options.hint;
 		this.exitCode = options.exitCode ?? ExitCode.error;
+		this.details = options.details;
 	}
 }
 

@@ -37,7 +37,8 @@ needs the help renderer while the help renderer needs the list of commands:
 - **Every command has to work non interactively.** Flags supply the answers, prompts only fill in what is missing. Prompting when nobody can answer throws instead of hanging, see `assertInteractive` in `src/ui/prompt.ts`.
 - **Never call a clack prompt directly**, go through `src/ui/prompt.ts`. Those wrappers turn Ctrl+C into a `CancelledError` so no command has to check `isCancel` itself.
 - **Never print with `console.log`**, use `writeLine` or the `log` helpers from `src/ui/output.ts`. Biome fails the build on `console`.
-- **Failures throw `CliError`** from `src/utils/errors.ts` with a message saying what went wrong and a `hint` saying what to do about it. Commands return nothing on success, the exit code comes from the error.
+- **Failures throw `CliError`** from `src/utils/errors.ts` with a message saying what went wrong and a `hint` saying what to do about it. The exit code comes from the error.
+- **Every command has to work under `--json`**, which is how the GUI and AI agents drive the CLI (the protocol is in README.md and `src/ui/json.ts`). A command returns what it did as a plain object, which becomes `result.data`: every return, "nothing was changed" included, with a shape that stays stable. The wrappers in `src/ui/output.ts` and `src/ui/prompt.ts` already turn everything on screen into events. A clack function that is not wrapped there yet gets a wrapper with a JSON branch before a command uses it.
 
 ## Naming commands
 

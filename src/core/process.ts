@@ -6,7 +6,8 @@ import { CliError } from '../utils/errors.ts';
  *
  * Everything goes through here so that a missing tool is always the same friendly message,
  * and so that output is captured rather than sprayed over the prompts. Only `inherit` hands
- * the terminal over, for `flutter run`, where the user has to be able to press keys.
+ * the terminal over, for `flutter run`, where the user has to be able to press keys, and
+ * {@link runStreaming} is the same for a program driving the CLI with `--json`.
  */
 
 export type Tool = 'flutter' | 'dart' | 'git';
@@ -133,6 +134,67 @@ export async function runInTerminal(tool: Tool, args: string[], cwd?: string): P
 		stderr: 'inherit',
 	});
 	return await proc.exited;
+}
+
+/** A running process whose output arrives line by line, see {@link runStreaming}. */
+export interface StreamingProcess {
+	/** Writes to its stdin, as if typed. Ignored once it has stopped. */
+	write(text: string): void;
+	/** Its exit code, once it has stopped and everything it printed has been handed over. */
+	exited: Promise<number>;
+}
+
+/**
+ * Runs a tool with its output handed over line by line and its input written on demand.
+ * {@link runInTerminal} for a program rather than a person, which is `flutter run` under
+ * `--json`.
+ */
+export function runStreaming(
+	tool: Tool,
+	args: string[],
+	cwd: string | undefined,
+	onLine: (stream: 'stdout' | 'stderr', line: string) => void,
+): StreamingProcess {
+	const proc = Bun.spawn([findTool(tool), ...args], {
+		cwd,
+		env: { ...process.env },
+		stdin: 'pipe',
+		stdout: 'pipe',
+		stderr: 'pipe',
+	});
+	const reading = Promise.all([
+		readLines(proc.stdout, (line) => onLine('stdout', line)),
+		readLines(proc.stderr, (line) => onLine('stderr', line)),
+	]);
+
+	return {
+		write(text) {
+			try {
+				proc.stdin.write(text);
+				proc.stdin.flush();
+			} catch {
+				// It has stopped already, and a key pressed too late means nothing.
+			}
+		},
+		exited: reading.then(() => proc.exited),
+	};
+}
+
+/** Internal: calls `each` with every line of a stream, the last one even without a newline. */
+async function readLines(
+	stream: ReadableStream<Uint8Array>,
+	each: (line: string) => void,
+): Promise<void> {
+	const decoder = new TextDecoder();
+	let rest = '';
+	for await (const chunk of stream) {
+		rest += decoder.decode(chunk, { stream: true });
+		const lines = rest.split(/\r?\n/);
+		rest = lines.pop() ?? '';
+		for (const line of lines) each(line);
+	}
+	rest += decoder.decode();
+	if (rest) each(rest);
 }
 
 /** The last few lines of some output, which is where the reason for a failure is. */

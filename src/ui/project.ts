@@ -33,7 +33,7 @@ export function renderChangeFailure(
 	titleOf: (packageName: string) => string,
 ): void {
 	if (failure.kind === 'fetch') {
-		log.error('These packages do not fit together.');
+		log.error('These packages do not fit together.', failure);
 		log.message(theme.dim(failure.output));
 		return;
 	}
@@ -45,7 +45,13 @@ export function renderChangeFailure(
 			.map((problem) => theme.dim(`${problem.file}:${problem.line}  ${problem.message}`));
 		const more = group.problems.length - shownPerPackage;
 		if (more > 0) lines.push(theme.dim(`and ${more} more`));
-		log.error([`${who} does not build with this:`, ...lines].join('\n'));
+		// Every error goes to a program, not just the first few a person gets to read.
+		const data = {
+			package: group.name ?? null,
+			title: group.name ? titleOf(group.name) : null,
+			problems: group.problems,
+		};
+		log.error([`${who} does not build with this:`, ...lines].join('\n'), data);
 	}
 }
 

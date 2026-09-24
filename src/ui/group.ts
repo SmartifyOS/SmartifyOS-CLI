@@ -1,17 +1,19 @@
 import type { Command } from '../commands/types.ts';
-import { renderCommandHelp } from './help.ts';
+import { showCommandHelp } from './help.ts';
+import { isJsonMode } from './json.ts';
 import { isInteractive, select } from './prompt.ts';
 
 /**
  * What a group of commands, like `extension`, does when none of its commands is named:
- * asks which one, or prints the list when nobody can answer.
+ * asks which one, or prints the list when nobody can answer. With `--json` it is the list,
+ * as data, since a program shows its own choices.
  */
-export async function runGroup(group: Command): Promise<void> {
+export async function runGroup(group: Command): Promise<unknown> {
 	const subcommands = group.subcommands?.filter((c) => !c.hidden) ?? [];
 
-	if (!isInteractive() || subcommands.length === 0) {
-		renderCommandHelp(group);
-		return;
+	// A program asked for the group on its own, which is a question about what is in it.
+	if (!isInteractive() || isJsonMode() || subcommands.length === 0) {
+		return showCommandHelp(group);
 	}
 
 	const choice = await select({
@@ -20,5 +22,5 @@ export async function runGroup(group: Command): Promise<void> {
 	});
 
 	const subcommand = subcommands.find((c) => c.name === choice);
-	await subcommand?.run({ flags: {}, positionals: [] });
+	return await subcommand?.run({ flags: {}, positionals: [] });
 }

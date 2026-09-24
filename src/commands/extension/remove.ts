@@ -1,12 +1,12 @@
 import { withoutExtension } from '../../core/project/block.ts';
-import { findEntry } from '../../core/project/car.ts';
+import { findEntry, packageData } from '../../core/project/car.ts';
 import { tryChange, writeLinks, writePubspec } from '../../core/project/change.ts';
 import { carFiles, requireCar } from '../../core/project/find.ts';
 import { type SwitchResult, switchOffInFile } from '../../core/project/main-dart.ts';
 import { intro, outro } from '../../ui/output.ts';
 import { followSteps, readCarStep, renderChangeFailure } from '../../ui/project.ts';
 import { confirm, spinner } from '../../ui/prompt.ts';
-import { renderSwitchOff } from '../../ui/switch-on.ts';
+import { renderSwitchOff, switchData } from '../../ui/switch-on.ts';
 import { theme } from '../../ui/theme.ts';
 import { CliError } from '../../utils/errors.ts';
 import { binaryName } from '../flags.ts';
@@ -31,7 +31,7 @@ export const extensionRemoveCommand: Command = {
 
 		if (state.extensions.length === 0) {
 			outro(`This car has no extensions ${theme.dim('(nothing was changed)')}`);
-			return;
+			return { changed: false, extension: null };
 		}
 
 		const extension = await pickInstalled(
@@ -45,7 +45,7 @@ export const extensionRemoveCommand: Command = {
 			(await confirm({ message: `Take ${extension.title} out of your car?`, initialValue: true }));
 		if (!go) {
 			outro(`Left as it is ${theme.dim('(nothing was changed)')}`);
-			return;
+			return { changed: false, extension: packageData(extension) };
 		}
 
 		const entry = extension.root ? await findEntry(extension.name, extension.root) : undefined;
@@ -71,6 +71,7 @@ export const extensionRemoveCommand: Command = {
 			);
 			const manual = switched?.kind === 'manual';
 			throw new CliError(`${extension.title} was not removed, nothing was changed.`, {
+				details: result.failure,
 				hint: manual
 					? `Take ${theme.code(`${entry?.className}`)} and its import out of lib/main.dart yourself, then run this again.`
 					: 'Something above still uses it. Take that out first, then run this again.',
@@ -80,6 +81,11 @@ export const extensionRemoveCommand: Command = {
 		progress.stop(`Took ${theme.strong(extension.title)} out of your car`);
 		renderSwitchOff(switched);
 		outro('All done.');
+		return {
+			changed: true,
+			extension: packageData(extension),
+			switchedOff: switchData(switched),
+		};
 	},
 };
 

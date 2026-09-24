@@ -1,7 +1,7 @@
 import { branchCommit, defaultBranch, listReleases } from '../../core/git.ts';
 import { withExtension } from '../../core/project/block.ts';
 import { describeVersion, type Installed } from '../../core/project/car.ts';
-import { tryChange, writePubspec } from '../../core/project/change.ts';
+import { type ChangeFailure, tryChange, writePubspec } from '../../core/project/change.ts';
 import { requireCar } from '../../core/project/find.ts';
 import { newestFitting, type RemoteExtension } from '../../core/project/remote.ts';
 import { isReleaseTag } from '../../core/smartify-os.ts';
@@ -47,7 +47,7 @@ export const extensionUpdateCommand: Command = {
 			outro(
 				`This car has no extensions yet. Add one with ${theme.code(`${binaryName} extension add`)}.`,
 			);
-			return;
+			return result([], []);
 		}
 
 		const chosen = positionals[0]
@@ -60,8 +60,9 @@ export const extensionUpdateCommand: Command = {
 
 		if (found.plans.length === 0) {
 			outro(`${chosen.length === 1 ? 'It is' : 'Everything is'} up to date`);
-			return;
+			return result([], []);
 		}
+		const available = found.plans;
 
 		log.info(
 			[
@@ -75,7 +76,7 @@ export const extensionUpdateCommand: Command = {
 
 		if (flags.check === true) {
 			outro(`Run ${theme.code(`${binaryName} extension update`)} when you are ready.`);
-			return;
+			return result(available, []);
 		}
 
 		let plans = found.plans;
@@ -106,17 +107,18 @@ export const extensionUpdateCommand: Command = {
 
 		if (plans.length === 0) {
 			outro(`Left as they are ${theme.dim('(nothing was changed)')}`);
-			return;
+			return result(available, []);
 		}
 
 		const titleOf = (name: string) => state.extensions.find((e) => e.name === name)?.title ?? name;
 
+		let lastFailure: ChangeFailure | undefined;
 		// When some of them do not build, the rest are tried again without them, once.
 		for (let attempt = 0; attempt < 2 && plans.length > 0; attempt++) {
 			const progress = spinner();
 			progress.start(`Updating ${plans.map((plan) => plan.extension.title).join(', ')}`);
 			const current = plans;
-			const result = await tryChange(app, {
+			const tried = await tryChange(app, {
 				async edit() {
 					let text = state.pubspecText;
 					for (const plan of current) {
@@ -128,24 +130,25 @@ export const extensionUpdateCommand: Command = {
 				onStep: followSteps(progress),
 			});
 
-			if (result.ok) {
+			if (tried.ok) {
 				progress.stop(
 					`Updated ${current.map((plan) => `${theme.strong(plan.extension.title)} to ${target(plan)}`).join(', ')}`,
 				);
 				outro('All done.');
-				return;
+				return result(available, current);
 			}
 
 			progress.error('That did not fit');
-			renderChangeFailure(result.failure, titleOf);
+			renderChangeFailure(tried.failure, titleOf);
+			lastFailure = tried.failure;
 
 			const failing =
-				result.failure.kind === 'build'
-					? new Set(result.failure.problems.map((group) => group.name))
+				tried.failure.kind === 'build'
+					? new Set(tried.failure.problems.map((group) => group.name))
 					: new Set<string | undefined>();
 			const rest = current.filter((plan) => !failing.has(plan.extension.name));
 			if (
-				result.failure.kind === 'fetch' ||
+				tried.failure.kind === 'fetch' ||
 				failing.has(undefined) ||
 				rest.length === current.length
 			)
@@ -161,9 +164,39 @@ export const extensionUpdateCommand: Command = {
 
 		throw new CliError('Nothing was updated, your car is as it was.', {
 			hint: 'The errors above say what did not fit.',
+			details: lastFailure,
 		});
 	},
 };
+
+/** An extension moving on, as `--json` reports it. */
+interface UpdateData {
+	name: string;
+	title: string;
+	from: string;
+	to: string;
+}
+
+/**
+ * Internal: what `extension update` reports with `--json`. `available` is every update
+ * there was, `updated` the ones that made it into the car.
+ */
+function result(
+	available: Plan[],
+	updated: Plan[],
+): { changed: boolean; available: UpdateData[]; updated: UpdateData[] } {
+	const data = (plan: Plan): UpdateData => ({
+		name: plan.extension.name,
+		title: plan.extension.title,
+		from: describeVersion(plan.extension),
+		to: target(plan),
+	});
+	return {
+		changed: updated.length > 0,
+		available: available.map(data),
+		updated: updated.map(data),
+	};
+}
 
 /** Internal: what a plan moves an extension to, in words. */
 function target(plan: Plan): string {

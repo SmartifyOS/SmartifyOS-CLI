@@ -35,3 +35,21 @@ export function renderSwitchOn(result: SwitchResult | undefined, packageName: st
 export function renderSwitchOff(result: SwitchResult | undefined): void {
 	if (result?.kind === 'done') log.success(`Took it out of ${theme.code('lib/main.dart')}`);
 }
+
+/**
+ * What happened in `lib/main.dart`, as data for `--json`. When it has to be done by hand,
+ * the exact lines, the same ones a person is shown.
+ */
+export type SwitchData =
+	| { status: 'done' | 'already' | 'unknown' }
+	| { status: 'manual'; importLine: string; constructorCall: string };
+
+export function switchData(result: SwitchResult | undefined): SwitchData {
+	if (!result) return { status: 'unknown' };
+	if (result.kind !== 'manual') return { status: result.kind };
+	return {
+		status: 'manual',
+		importLine: importLine(result.entry),
+		constructorCall: constructorCall(result.entry),
+	};
+}

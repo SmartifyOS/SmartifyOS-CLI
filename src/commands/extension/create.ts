@@ -156,6 +156,14 @@ export const extensionCreateCommand: Command = {
 			'Next',
 		);
 		outro(`${theme.success(theme.strong(names.name))} is ready`);
+		return {
+			changed: true,
+			name: names.name,
+			packageName: names.packageName,
+			path: target,
+			smartifyOs: core.label,
+			committed,
+		};
 	},
 };
 

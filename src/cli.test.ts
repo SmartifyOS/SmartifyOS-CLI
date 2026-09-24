@@ -71,6 +71,21 @@ describe('parse', () => {
 		});
 	});
 
+	test('--json works on every command, before or after its name', () => {
+		withCommand(example, () => {
+			for (const argv of [
+				['--json', 'build'],
+				['build', '--json'],
+			]) {
+				const result = parse(argv);
+				expect(result.kind).toBe('command');
+				if (result.kind === 'command') expect(result.flags.json).toBe(true);
+			}
+		});
+		expect(parse(['--version', '--json'])).toEqual({ kind: 'version' });
+		expect(parse(['extension', 'add', 'x', '--json']).kind).toBe('command');
+	});
+
 	test('--help after a command asks for that command instead of running it', () => {
 		withCommand(example, () => {
 			const result = parse(['build', '--help']);

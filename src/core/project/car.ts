@@ -190,6 +190,36 @@ export function describeVersion(installed: Installed): string {
 }
 
 /**
+ * One installed package as plain data, the way `--json` reports it. Missing values are
+ * null rather than left out, so a program can rely on every field being there.
+ */
+export interface PackageData {
+	name: string;
+	title: string;
+	version: string | null;
+	/** The exact commit, when it comes from git. */
+	commit: string | null;
+	/** Where pubspec.yaml says it comes from. */
+	source: PackageSource;
+	/** The folder on this computer it is linked to, when it is. */
+	linkedTo: string | null;
+	/** How the version reads in a sentence, see {@link describeVersion}. */
+	label: string;
+}
+
+export function packageData(installed: Installed): PackageData {
+	return {
+		name: installed.name,
+		title: installed.title,
+		version: installed.version ?? null,
+		commit: installed.commit ?? null,
+		source: installed.source,
+		linkedTo: installed.link ?? null,
+		label: describeVersion(installed),
+	};
+}
+
+/**
  * How a car's app switches an extension on: the class that extends `SmartifyOsExtension`,
  * and the library of the package that exports it.
  *

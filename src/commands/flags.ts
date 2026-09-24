@@ -15,6 +15,10 @@ export const binaryName = 'smartify-os';
 export const globalFlags: Record<string, FlagSpec> = {
 	help: { type: 'boolean', short: 'h', describe: 'Show what this command can do' },
 	yes: { type: 'boolean', short: 'y', describe: 'Say yes to every question, never ask' },
+	json: {
+		type: 'boolean',
+		describe: 'Print one JSON event per line and take answers on stdin, for scripts and apps',
+	},
 };
 
 /** Flags that only make sense before a command name. */

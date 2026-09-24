@@ -1,6 +1,7 @@
 import { binaryName, globalFlags, topLevelFlags } from '../commands/flags.ts';
 import type { Command, FlagSpec } from '../commands/types.ts';
-import { versionString } from '../utils/version.ts';
+import { buildSha, version, versionString } from '../utils/version.ts';
+import { isJsonMode } from './json.ts';
 import { writeLine } from './output.ts';
 import { symbols, theme } from './theme.ts';
 
@@ -10,6 +11,28 @@ import { symbols, theme } from './theme.ts';
  * The command list is passed in rather than imported, so that the `help` command can call
  * this without the registry having to import it back. Keep it that way.
  */
+
+/**
+ * The help for the whole CLI: printed for a person, or with `--json` handed back as data
+ * for the closing `result` event.
+ */
+export function showRootHelp(
+	list: readonly Command[],
+): ReturnType<typeof describeRoot> | undefined {
+	if (isJsonMode()) return describeRoot(list);
+	renderRootHelp(list);
+	return undefined;
+}
+
+/** The help for one command, the same way as {@link showRootHelp}. */
+export function showCommandHelp(
+	command: Command,
+	parent?: Command,
+): CommandDescription | undefined {
+	if (isJsonMode()) return describeCommand(command, parent);
+	renderCommandHelp(command, parent);
+	return undefined;
+}
 
 /** Prints the list of commands, the global flags, and how to get more out of the CLI. */
 export function renderRootHelp(list: readonly Command[]): void {
@@ -112,4 +135,70 @@ function renderFlags(spec: Record<string, FlagSpec>): void {
 	entries.forEach(([, flag], index) => {
 		writeLine(`    ${(labels[index] ?? '').padEnd(width)}  ${theme.dim(flag.describe)}`);
 	});
+}
+
+/** One flag, as `--help --json` describes it. */
+export interface FlagDescription {
+	name: string;
+	type: 'boolean' | 'string';
+	short?: string;
+	multiple?: boolean;
+	describe: string;
+}
+
+/** One command, as `--help --json` describes it, so a program can build a form from it. */
+export interface CommandDescription {
+	/** What is typed after the binary name, `extension add`. */
+	command: string;
+	name: string;
+	aliases: string[];
+	summary: string;
+	description: string;
+	/** What goes after the name besides the flags, `<url>`. */
+	usage: string | undefined;
+	examples: string[];
+	/** Every flag it takes, the global ones included. */
+	flags: FlagDescription[];
+	subcommands: CommandDescription[];
+	utility: boolean;
+}
+
+/** The whole CLI, as `--help --json` describes it. */
+export function describeRoot(list: readonly Command[]) {
+	return {
+		binary: binaryName,
+		version,
+		sha: buildSha,
+		flags: describeFlags(topLevelFlags),
+		commands: list.filter((c) => !c.hidden).map((c) => describeCommand(c)),
+	};
+}
+
+/** One command, as `smartify-os <command> --help --json` describes it. */
+export function describeCommand(command: Command, parent?: Command): CommandDescription {
+	return {
+		command: parent ? `${parent.name} ${command.name}` : command.name,
+		name: command.name,
+		aliases: command.aliases ?? [],
+		summary: command.summary,
+		description: command.description ?? command.summary,
+		usage: command.subcommands?.length ? '<command>' : command.usage,
+		examples: command.examples ?? [],
+		flags: describeFlags({ ...globalFlags, ...command.flags }),
+		subcommands: (command.subcommands ?? [])
+			.filter((c) => !c.hidden)
+			.map((c) => describeCommand(c, command)),
+		utility: command.utility === true,
+	};
+}
+
+/** Internal: a flag spec as plain data. */
+function describeFlags(spec: Record<string, FlagSpec>): FlagDescription[] {
+	return Object.entries(spec).map(([name, flag]) => ({
+		name,
+		type: flag.type,
+		...(flag.short ? { short: flag.short } : {}),
+		...(flag.multiple ? { multiple: true } : {}),
+		describe: flag.describe,
+	}));
 }

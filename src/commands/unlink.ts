@@ -35,7 +35,7 @@ export const unlinkCommand: Command = {
 
 		if (state.links.size === 0) {
 			outro(`Nothing is linked ${theme.dim('(nothing was changed)')}`);
-			return;
+			return { changed: false, unlinked: [], removed: [], stillLinked: [] };
 		}
 
 		const linked = [state.core, ...state.extensions].filter((p) => p.link !== undefined);
@@ -73,6 +73,7 @@ export const unlinkCommand: Command = {
 			progress.error('That did not work');
 			renderChangeFailure(result.failure, (name) => name);
 			throw new CliError('Nothing was changed.', {
+				details: result.failure,
 				hint: 'The released versions do not fit together, see above.',
 			});
 		}
@@ -83,6 +84,13 @@ export const unlinkCommand: Command = {
 		}
 		for (const each of switched) renderSwitchOff(each);
 		outro(links.size === 0 ? 'Your car uses the released versions again.' : 'All done.');
+		return {
+			changed: true,
+			unlinked: chosen.map((p) => p.name),
+			// Only there while linked, so out of the car again.
+			removed: temporary.map((p) => p.name),
+			stillLinked: [...links.keys()],
+		};
 	},
 };
 

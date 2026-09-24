@@ -1,6 +1,6 @@
 import { visibleCommands } from '../commands/index.ts';
-import { ExitCode } from '../utils/errors.ts';
-import { renderRootHelp } from './help.ts';
+import { showRootHelp } from './help.ts';
+import { isJsonMode } from './json.ts';
 import { intro, log, outro } from './output.ts';
 import { isInteractive, select } from './prompt.ts';
 import { theme } from './theme.ts';
@@ -12,15 +12,13 @@ import { theme } from './theme.ts';
  * same things `--help` does, just pickable. Every entry here must map onto a command that
  * can also be run directly, nothing should be reachable only through the menu.
  */
-export async function runMenu(): Promise<number> {
+export async function runMenu(): Promise<unknown> {
 	const visible = visibleCommands();
 
 	// A menu needs somebody to pick from it. Piped into a file or run from a script, the
-	// friendliest thing this can be is the same list `--help` prints.
-	if (!isInteractive()) {
-		renderRootHelp(visible);
-		return ExitCode.ok;
-	}
+	// friendliest thing this can be is the same list `--help` prints. A program reading
+	// `--json` gets that list as data and draws its own menu.
+	if (!isInteractive() || isJsonMode()) return showRootHelp(visible);
 
 	intro('Welcome');
 
@@ -34,7 +32,7 @@ export async function runMenu(): Promise<number> {
 
 	if (visible.length === 0) {
 		outro(`See you soon ${theme.dim('(nothing was changed)')}`);
-		return ExitCode.ok;
+		return undefined;
 	}
 
 	const choice = await select({
@@ -43,8 +41,5 @@ export async function runMenu(): Promise<number> {
 	});
 
 	const command = visible.find((c) => c.name === choice);
-	if (!command) return ExitCode.error;
-
-	await command.run({ flags: {}, positionals: [] });
-	return ExitCode.ok;
+	return await command?.run({ flags: {}, positionals: [] });
 }

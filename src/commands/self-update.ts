@@ -74,7 +74,7 @@ export const selfUpdateCommand: Command = {
 		// the user named a version, so install exactly that one, up, down or sideways.
 		if (!to && !isNewer(plan.targetVersion, plan.currentVersion)) {
 			outro(`You already have the newest version ${theme.dim(`(${plan.currentVersion})`)}`);
-			return;
+			return { changed: false, from: plan.currentVersion, to: null };
 		}
 
 		if (flags.check === true) {
@@ -82,7 +82,7 @@ export const selfUpdateCommand: Command = {
 				`Version ${theme.strong(plan.targetVersion)} is available, you have ${plan.currentVersion}.`,
 			);
 			outro(`Run ${theme.code(`${binaryName} self-update`)} when you are ready.`);
-			return;
+			return { changed: false, from: plan.currentVersion, to: plan.targetVersion };
 		}
 
 		const go =
@@ -94,7 +94,7 @@ export const selfUpdateCommand: Command = {
 
 		if (!go) {
 			outro(`Left as it is ${theme.dim('(nothing was changed)')}`);
-			return;
+			return { changed: false, from: plan.currentVersion, to: plan.targetVersion };
 		}
 
 		const work = spinner();
@@ -111,6 +111,7 @@ export const selfUpdateCommand: Command = {
 		work.stop(`Updated to ${theme.success(theme.strong(plan.targetVersion))}`);
 
 		outro('All done. The next command you run is the new one.');
+		return { changed: true, from: plan.currentVersion, to: plan.targetVersion };
 	},
 };
 

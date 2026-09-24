@@ -65,9 +65,15 @@ export const updateCommand: Command = {
 		}
 
 		const target = await step('Looking for SmartifyOS releases', () => pickTarget(current, to));
+		const unchanged = (to: string | null): UpdateResult => ({
+			changed: false,
+			from: describeVersion(current),
+			to,
+			extensions: [],
+		});
 		if (!target) {
 			outro(`Your car has the newest SmartifyOS ${theme.dim(describeVersion(current))}`);
-			return;
+			return unchanged(null);
 		}
 
 		if (flags.check === true) {
@@ -75,7 +81,7 @@ export const updateCommand: Command = {
 				`SmartifyOS ${theme.strong(target.label)} is available, your car has ${describeVersion(current)}.`,
 			);
 			outro(`Run ${theme.code(`${binaryName} update`)} when you are ready.`);
-			return;
+			return unchanged(target.label);
 		}
 
 		const currentVersion = current.version ?? '0.0.0';
@@ -103,13 +109,38 @@ export const updateCommand: Command = {
 			}));
 		if (!go) {
 			outro(`Left as it is ${theme.dim('(nothing was changed)')}`);
-			return;
+			return unchanged(target.label);
 		}
 
-		const label = await moveCore(state, target.ref, { yes: flags.yes === true });
-		outro(`Your car runs SmartifyOS ${theme.success(theme.strong(label))}`);
+		const moved = await moveCore(state, target.ref, { yes: flags.yes === true });
+		outro(`Your car runs SmartifyOS ${theme.success(theme.strong(moved.label))}`);
+		return {
+			changed: true,
+			from: describeVersion(current),
+			to: moved.label,
+			extensions: moved.extensions,
+		} satisfies UpdateResult;
 	},
 };
+
+/**
+ * What `update` reports with `--json`. `to` is where the car went, or with `--check`, or
+ * when the answer was no, where it could go. Null when it has the newest already.
+ */
+interface UpdateResult {
+	changed: boolean;
+	from: string;
+	to: string | null;
+	extensions: MovedExtension[];
+}
+
+/** An extension that was moved along with SmartifyOS. */
+export interface MovedExtension {
+	name: string;
+	title: string;
+	from: string;
+	to: string;
+}
 
 /** Internal: the SmartifyOS to move to. */
 interface Target {
@@ -210,20 +241,22 @@ type Offer =
  *
  * Also used by `extension add`, for an extension that needs a newer SmartifyOS first.
  *
- * @returns how the new version reads, for the closing line.
+ * @returns how the new version reads, for the closing line, and the extensions moved with it.
  * @throws {CliError} when it does not work out, after putting everything back.
  */
 export async function moveCore(
 	state: CarState,
 	ref: string,
 	options: { yes: boolean },
-): Promise<string> {
+): Promise<{ label: string; extensions: MovedExtension[] }> {
 	const next = await step(`Reading SmartifyOS ${ref}`, () => coreAt(ref));
 	const onBranch = !isReleaseTag(ref);
 	const label = onBranch ? ref : next.version;
 	const previous = await overridesOfInstalledCore(state);
 	const moved = new Map<string, RemoteExtension>();
 	const upgrades = new Set<string>(onBranch ? [corePackage] : []);
+	/** The commit each extension on a branch is moved to, by package name. */
+	const commits = new Map<string, string>();
 
 	while (true) {
 		const progress = spinner();
@@ -245,11 +278,21 @@ export async function moveCore(
 
 		if (result.ok) {
 			progress.stop(`Moved to SmartifyOS ${label}`);
+			const extensions: MovedExtension[] = [];
 			for (const [name, extension] of moved) {
-				const title = state.extensions.find((e) => e.name === name)?.title ?? name;
-				log.success(`${title} moved to ${extension.version ?? extension.source.ref} with it`);
+				const installed = state.extensions.find((e) => e.name === name);
+				const title = installed?.title ?? name;
+				const to = extension.version ?? extension.source.ref ?? '';
+				log.success(`${title} moved to ${to} with it`);
+				extensions.push({ name, title, from: installed ? describeVersion(installed) : '', to });
 			}
-			return label;
+			for (const [name, commit] of commits) {
+				const installed = state.extensions.find((e) => e.name === name);
+				if (!installed) continue;
+				const to = commit.slice(0, 7);
+				extensions.push({ name, title: installed.title, from: describeVersion(installed), to });
+			}
+			return { label, extensions };
 		}
 
 		progress.error(`SmartifyOS ${label} does not fit this car yet`);
@@ -260,6 +303,7 @@ export async function moveCore(
 		if (failure.kind === 'fetch' || failure.problems.some((group) => !group.name)) {
 			renderChangeFailure(failure, titleOf);
 			throw new CliError(stay, {
+				details: failure,
 				hint:
 					failure.kind === 'fetch'
 						? `Something in your car needs a version of a package that SmartifyOS ${label} does not allow, see above.`
@@ -286,6 +330,7 @@ export async function moveCore(
 				);
 			}
 			throw new CliError(stay, {
+				details: { ...failure, behind: behind.map((e) => e.name) },
 				hint: `Try again once ${behind.length === 1 ? 'it has' : 'they have'} a release for it, or remove ${behind.length === 1 ? 'it' : 'them'} with ${theme.code(`${binaryName} extension remove`)}.`,
 			});
 		}
@@ -305,8 +350,12 @@ export async function moveCore(
 		if (!go) throw new CliError(stay, { hint: 'Nothing was changed.' });
 
 		for (const offer of offers) {
-			if ('to' in offer) moved.set(offer.extension.name, offer.to);
-			else upgrades.add(offer.extension.name);
+			if ('to' in offer) {
+				moved.set(offer.extension.name, offer.to);
+			} else {
+				upgrades.add(offer.extension.name);
+				commits.set(offer.extension.name, offer.commit);
+			}
 		}
 	}
 }

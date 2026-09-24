@@ -62,7 +62,7 @@ export const extensionReleaseCommand: Command = {
 			log.info(`${current} was released on this computer, but never reached GitHub.`);
 			await push(dir, remote, lastTag);
 			outro(`Released ${theme.success(theme.strong(current))}`);
-			return;
+			return { changed: true, version: current, previous: current };
 		}
 
 		const changed = (await git(dir, ['status', '--porcelain'])).stdout.trim() !== '';
@@ -71,7 +71,7 @@ export const extensionReleaseCommand: Command = {
 			(await git(dir, ['describe', '--exact-match', '--tags', 'HEAD'])).stdout.trim() === lastTag;
 		if (atTag && !changed) {
 			outro(`Nothing changed since ${current} ${theme.dim('(nothing was released)')}`);
-			return;
+			return { changed: false, version: current, previous: current };
 		}
 
 		// The very first release is the version it was made with, whose changelog entry the
@@ -90,7 +90,7 @@ export const extensionReleaseCommand: Command = {
 			}));
 		if (!go) {
 			outro(`Left as it is ${theme.dim('(nothing was changed)')}`);
-			return;
+			return { changed: false, version: current, previous: current };
 		}
 
 		await findSmartifyOs(dir);
@@ -134,6 +134,7 @@ export const extensionReleaseCommand: Command = {
 
 		await push(dir, remote, `v${version}`);
 		outro(`Released ${theme.success(theme.strong(version))}. Cars can update to it now.`);
+		return { changed: true, version, previous: current };
 	},
 };
 

@@ -32,7 +32,8 @@ export interface CommandContext {
  *     release: { type: 'boolean', describe: 'Build in release mode' },
  *   },
  *   async run({ flags }) {
- *     await buildProject({ release: flags.release === true });
+ *     const output = await buildProject({ release: flags.release === true });
+ *     return { output };
  *   },
  * };
  * ```
@@ -67,6 +68,10 @@ export interface Command {
 	/**
 	 * Does the work. Returning means it worked. To fail, throw a `CliError` with a message
 	 * the user can act on, and it decides the exit code.
+	 *
+	 * What it returns is its result as data, which a program running it with `--json` gets
+	 * as `result.data`. Return a plain object that says what happened (what changed, to which
+	 * version), never text meant for the screen, and keep its shape stable: a GUI is built on it.
 	 */
-	run(context: CommandContext): Promise<void> | void;
+	run(context: CommandContext): unknown;
 }

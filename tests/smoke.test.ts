@@ -180,3 +180,91 @@ describe('smartify-os', () => {
 		expect(stderr).not.toContain('EPIPE');
 	});
 });
+
+/**
+ * `--json`, which the GUI and AI agents drive the CLI with. Every line has to be JSON, the
+ * first one `start` and the last one `result`, whatever happens in between.
+ */
+describe('smartify-os --json', () => {
+	/** Internal: a run's events, checked for the shape every run has to have. */
+	async function runJson(args: string[]) {
+		const { code, stdout, stderr } = await runCli([...args, '--json']);
+		expect(stderr).toBe('');
+		const events = stdout
+			.trim()
+			.split('\n')
+			.map((line) => JSON.parse(line));
+		expect(events[0]).toMatchObject({ type: 'start', protocol: 1 });
+		const result = events.at(-1);
+		expect(result.type).toBe('result');
+		expect(result.exitCode).toBe(code);
+		return { code, events, result };
+	}
+
+	test('--version is data', async () => {
+		const { code, result } = await runJson(['--version']);
+		expect(code).toBe(0);
+		expect(result.data.version).toMatch(/^\d+\.\d+\.\d+$/);
+	});
+
+	test('--help describes every command and its flags', async () => {
+		const { result } = await runJson(['--help']);
+		const names = result.data.commands.map((c: { name: string }) => c.name);
+		expect(names).toContain('update');
+		expect(names).toContain('extension');
+		const extension = result.data.commands.find((c: { name: string }) => c.name === 'extension');
+		const add = extension.subcommands.find((c: { name: string }) => c.name === 'add');
+		expect(add.command).toBe('extension add');
+		expect(add.flags.map((f: { name: string }) => f.name)).toContain('version');
+	});
+
+	test('no command is the command list, not the menu', async () => {
+		const { code, result } = await runJson([]);
+		expect(code).toBe(0);
+		expect(result.data.commands.length).toBeGreaterThan(0);
+	});
+
+	test('a failure is a result with the message and the hint', async () => {
+		const { code, events, result } = await runJson(['extension', 'list']);
+		expect(code).toBe(1);
+		expect(events[0].command).toBe('extension list');
+		expect(result).toMatchObject({
+			ok: false,
+			error: { kind: 'user', message: 'There is no SmartifyOS car here.' },
+		});
+		expect(result.error.hint).toBeString();
+	});
+
+	test('a mistyped flag is reported as JSON too', async () => {
+		const { code, result } = await runJson(['update', '--bogus']);
+		expect(code).toBe(1);
+		expect(result.error.message).toContain("Unknown option '--bogus'");
+	});
+
+	test('a question nobody answers fails and names the question', async () => {
+		const { code, events, result } = await runJson(['extension', 'create']);
+		expect(code).toBe(1);
+		const prompt = events.find((e) => e.type === 'prompt');
+		expect(prompt).toMatchObject({ id: 'p1', kind: 'text' });
+		expect(result.error.details.prompt).toEqual(prompt);
+	});
+
+	test('an answer on stdin gets the command past its question', async () => {
+		const proc = Bun.spawn([process.execPath, 'run', entry, 'extension', 'create', '--json'], {
+			cwd: stateDir,
+			stdin: 'pipe',
+			stdout: 'pipe',
+			stderr: 'pipe',
+			env: { ...process.env, ...sealedEnv },
+		});
+		// An empty name is refused, and the question stays open for the next answer.
+		proc.stdin.write('{"id":"p1","value":""}\n');
+		proc.stdin.end();
+		const events = (await new Response(proc.stdout).text())
+			.trim()
+			.split('\n')
+			.map((line) => JSON.parse(line));
+		await proc.exited;
+		expect(events.find((e) => e.type === 'prompt-invalid')).toMatchObject({ id: 'p1' });
+	});
+});

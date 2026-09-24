@@ -2,9 +2,18 @@
 import * as clack from '@clack/prompts';
 import { parse, run } from './cli.ts';
 import { sweepReplacedBinary } from './core/self-update/install.ts';
-import { renderError } from './ui/output.ts';
+import {
+	closeInput,
+	emit,
+	enableJsonMode,
+	isJsonMode,
+	protocolVersion,
+	wantsJson,
+} from './ui/json.ts';
+import { errorPayload, renderError } from './ui/output.ts';
 import { maybeNotifyAboutUpdate } from './ui/self-update-notice.ts';
 import { CancelledError, CliError, ExitCode } from './utils/errors.ts';
+import { buildSha, version } from './utils/version.ts';
 
 /**
  * The entry point, and the only place in the CLI that ends the process.
@@ -27,16 +36,50 @@ function ignoreClosedPipes(): void {
 }
 
 async function main(argv: string[]): Promise<number> {
+	if (isJsonMode()) {
+		emit({
+			type: 'start',
+			protocol: protocolVersion,
+			version,
+			sha: buildSha,
+			command: commandName(argv) ?? null,
+		});
+	}
+
 	try {
-		return await run(argv);
+		const data = await run(argv);
+		if (isJsonMode()) emit({ type: 'result', ok: true, exitCode: ExitCode.ok, data: data ?? null });
+		return ExitCode.ok;
 	} catch (error) {
-		if (error instanceof CancelledError) {
-			clack.cancel('Cancelled, nothing was changed.');
-			return ExitCode.cancelled;
-		}
 		if ((error as NodeJS.ErrnoException)?.code === 'EPIPE') return ExitCode.ok;
-		renderError(error);
-		return error instanceof CliError ? error.exitCode : ExitCode.error;
+		const code =
+			error instanceof CancelledError
+				? ExitCode.cancelled
+				: error instanceof CliError
+					? error.exitCode
+					: ExitCode.error;
+
+		if (isJsonMode())
+			emit({ type: 'result', ok: false, exitCode: code, error: errorPayload(error) });
+		else if (error instanceof CancelledError) clack.cancel('Cancelled, nothing was changed.');
+		else renderError(error);
+		return code;
+	} finally {
+		if (isJsonMode()) closeInput();
+	}
+}
+
+/**
+ * Internal: the command a run is for, `extension add`, for the `start` event. Undefined for
+ * `--help`, `--version` and the menu, and when argv does not parse at all.
+ */
+function commandName(argv: string[]): string | undefined {
+	try {
+		const result = parse(argv);
+		if (result.kind !== 'command') return undefined;
+		return result.parent ? `${result.parent.name} ${result.command.name}` : result.command.name;
+	} catch {
+		return undefined;
 	}
 }
 
@@ -77,6 +120,8 @@ function wasSelfUpdateCommand(argv: string[]): boolean {
 ignoreClosedPipes();
 
 const argv = process.argv.slice(2);
+// Before anything can print, so that even a mistyped flag is reported as JSON.
+if (wantsJson(argv)) enableJsonMode();
 
 // Called rather than awaited at the top level, because compiling to a standalone binary
 // produces a format that has no top level await.

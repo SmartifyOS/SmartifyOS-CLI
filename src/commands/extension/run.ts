@@ -1,8 +1,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { addExamplePlatforms } from '../../core/extension/create.ts';
-import { runInTerminal } from '../../core/process.ts';
+import { runInTerminal, runStreaming } from '../../core/process.ts';
 import { requireExtension } from '../../core/project/find.ts';
+import { emit, forwardInput, isJsonMode } from '../../ui/json.ts';
 import { intro, log } from '../../ui/output.ts';
 import { step } from '../../ui/project.ts';
 import { theme } from '../../ui/theme.ts';
@@ -50,11 +51,30 @@ export const extensionRunCommand: Command = {
 		}
 
 		log.info(`Starting it. Press ${theme.code('r')} to see a change, ${theme.code('q')} to stop.`);
-		const code = await runInTerminal('flutter', ['run', '-d', platform], example);
+		const code = isJsonMode()
+			? await runForProgram(['run', '-d', platform], example)
+			: await runInTerminal('flutter', ['run', '-d', platform], example);
 		if (code !== 0) {
 			throw new CliError('The example app stopped with an error.', {
 				hint: 'What Flutter printed above says why.',
 			});
 		}
+		return { platform };
 	},
 };
+
+/**
+ * Internal: `flutter run` for a program. What Flutter prints arrives as `output` events, and
+ * `{"input": "r"}` on stdin is the same as pressing r.
+ */
+async function runForProgram(args: string[], cwd: string): Promise<number> {
+	const flutter = runStreaming('flutter', args, cwd, (stream, text) =>
+		emit({ type: 'output', stream, text }),
+	);
+	const stop = forwardInput((text) => flutter.write(text));
+	try {
+		return await flutter.exited;
+	} finally {
+		stop();
+	}
+}

@@ -11,7 +11,7 @@ import { coreFolder, corePackage } from '../core/smartify-os.ts';
 import { intro, log, outro } from '../ui/output.ts';
 import { followSteps, readCarStep, renderChangeFailure } from '../ui/project.ts';
 import { spinner, text } from '../ui/prompt.ts';
-import { renderSwitchOn } from '../ui/switch-on.ts';
+import { renderSwitchOn, switchData } from '../ui/switch-on.ts';
 import { theme } from '../ui/theme.ts';
 import { CliError } from '../utils/errors.ts';
 import { pubPath } from '../utils/pub-path.ts';
@@ -100,6 +100,7 @@ export const linkCommand: Command = {
 			progress.error(`${title} could not be linked`);
 			renderChangeFailure(result.failure, (n) => n);
 			throw new CliError('Nothing was changed.', {
+				details: result.failure,
 				hint: `The packages of the copy in ${path} do not fit together with the ones in your car.`,
 			});
 		}
@@ -107,6 +108,15 @@ export const linkCommand: Command = {
 		progress.stop(`Your car uses ${theme.strong(title)} from ${theme.code(path)}`);
 		renderSwitchOn(switched, name);
 		outro(`Run ${theme.code(`${binaryName} unlink`)} to go back to the released one.`);
+		return {
+			changed: true,
+			name,
+			title,
+			path,
+			// Linked without being in the car before, so it is in it only while linked.
+			added: !installed,
+			switchedOn: installed ? null : switchData(switched),
+		};
 	},
 };
 

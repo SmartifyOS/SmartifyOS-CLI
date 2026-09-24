@@ -2,13 +2,15 @@ import { parseArgs } from 'node:util';
 import { binaryName, globalFlags, topLevelFlags } from './commands/flags.ts';
 import { commands, findCommand, visibleCommands } from './commands/index.ts';
 import type { Command, FlagSpec, Flags } from './commands/types.ts';
-import { renderCommandHelp, renderRootHelp } from './ui/help.ts';
+import { buildTarget } from './core/self-update/target.ts';
+import { showCommandHelp, showRootHelp } from './ui/help.ts';
+import { isJsonMode } from './ui/json.ts';
 import { runMenu } from './ui/menu.ts';
 import { writeLine } from './ui/output.ts';
 import { theme } from './ui/theme.ts';
-import { CliError, ExitCode } from './utils/errors.ts';
+import { CliError } from './utils/errors.ts';
 import { closest } from './utils/suggest.ts';
-import { versionString } from './utils/version.ts';
+import { buildSha, version, versionString } from './utils/version.ts';
 
 // Re-exported because this is where they were before, and where anyone would look first.
 export { binaryName, globalFlags };
@@ -116,22 +118,25 @@ function parseFlagsAndPositionals(
 }
 
 /**
- * Runs whatever the command line asked for and returns the exit code.
+ * Runs whatever the command line asked for. Returning means it worked, and what it returns
+ * is the command's result, which `--json` hands to the program as `result.data`.
  *
  * Never calls `process.exit` itself. That belongs to src/index.ts alone, so that this
  * function can be called from a test.
+ *
+ * @throws {CliError} for anything the user can fix, which decides the exit code.
  */
-export async function run(argv: string[]): Promise<number> {
+export async function run(argv: string[]): Promise<unknown> {
 	const result = parse(argv);
 
 	switch (result.kind) {
 		case 'version':
+			if (isJsonMode()) return { version, sha: buildSha, target: buildTarget };
 			writeLine(versionString());
-			return ExitCode.ok;
+			return undefined;
 
 		case 'help':
-			renderHelp(result.command, result.parent);
-			return ExitCode.ok;
+			return renderHelp(result.command, result.parent);
 
 		case 'menu':
 			return await runMenu();
@@ -144,13 +149,14 @@ export async function run(argv: string[]): Promise<number> {
 			});
 
 		case 'command':
-			await result.command.run({ flags: result.flags, positionals: result.positionals });
-			return ExitCode.ok;
+			return await result.command.run({ flags: result.flags, positionals: result.positionals });
 	}
 }
 
-/** Prints the help for one command, or for the whole CLI when no command is given. */
-export function renderHelp(command?: Command, parent?: Command): void {
-	if (command) renderCommandHelp(command, parent);
-	else renderRootHelp(visibleCommands());
+/**
+ * Prints the help for one command, or for the whole CLI when no command is given. With
+ * `--json` it returns it as data instead.
+ */
+export function renderHelp(command?: Command, parent?: Command): unknown {
+	return command ? showCommandHelp(command, parent) : showRootHelp(visibleCommands());
 }

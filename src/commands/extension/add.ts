@@ -21,13 +21,13 @@ import { coreReleases } from '../../core/smartify-os.ts';
 import { intro, log, outro } from '../../ui/output.ts';
 import { followSteps, readCarStep, renderChangeFailure, step } from '../../ui/project.ts';
 import { isInteractive, select, spinner, text } from '../../ui/prompt.ts';
-import { renderSwitchOn } from '../../ui/switch-on.ts';
+import { renderSwitchOn, switchData } from '../../ui/switch-on.ts';
 import { theme } from '../../ui/theme.ts';
 import { CliError } from '../../utils/errors.ts';
 import { lowerBound, meetsLowerBound } from '../../utils/semver.ts';
 import { binaryName } from '../flags.ts';
 import type { Command } from '../types.ts';
-import { moveCore } from '../update.ts';
+import { type MovedExtension, moveCore } from '../update.ts';
 
 /**
  * Adds an extension to the car from its repository.
@@ -87,10 +87,16 @@ export const extensionAddCommand: Command = {
 		}
 
 		const coreVersion = state.core.version ?? '0.0.0';
+		let movedCore: { from: string; to: string; extensions: MovedExtension[] } | null = null;
 		if (!meetsLowerBound(extension.coreConstraint, coreVersion)) {
+			const from = describeVersion(state.core);
 			const choice = await resolveTooNew(state, extension, found.releases, title);
-			if (choice.kind === 'older') extension = choice.extension;
-			else state = await readCarStep(app);
+			if (choice.kind === 'older') {
+				extension = choice.extension;
+			} else {
+				state = await readCarStep(app);
+				movedCore = { from, to: choice.label, extensions: choice.extensions };
+			}
 		}
 
 		const progress = spinner();
@@ -116,6 +122,7 @@ export const extensionAddCommand: Command = {
 				name === extension.packageName ? title : name,
 			);
 			throw new CliError(`${title} was not added, nothing was changed.`, {
+				details: result.failure,
 				hint:
 					result.failure.kind === 'build'
 						? `It does not build with SmartifyOS ${state.core.version ?? coreVersion}. Its author may not have caught up with it yet.`
@@ -130,6 +137,19 @@ export const extensionAddCommand: Command = {
 		);
 		renderSwitchOn(switched, extension.packageName);
 		outro('All done. It is in your car the next time you run it.');
+		return {
+			changed: true,
+			extension: {
+				name: extension.packageName,
+				title: finalTitle,
+				version: extension.version ?? null,
+				source: extension.source,
+				onBranch: extension.onBranch,
+			},
+			switchedOn: switchData(switched),
+			// Set when SmartifyOS had to move first to make room for it.
+			smartifyOs: movedCore,
+		};
 	},
 };
 
@@ -171,7 +191,10 @@ async function resolveTooNew(
 	extension: RemoteExtension,
 	releases: Release[],
 	title: string,
-): Promise<{ kind: 'moved' } | { kind: 'older'; extension: RemoteExtension }> {
+): Promise<
+	| ({ kind: 'moved' } & Awaited<ReturnType<typeof moveCore>>)
+	| { kind: 'older'; extension: RemoteExtension }
+> {
 	const needed = lowerBound(extension.coreConstraint) ?? '?';
 	const coreVersion = state.core.version ?? '0.0.0';
 	log.warn(
@@ -228,6 +251,6 @@ async function resolveTooNew(
 	if (choice === 'older' && older) return { kind: 'older', extension: older };
 	if (!newCore) throw new CliError('Nothing was changed.');
 
-	await moveCore(state, newCore.tag, { yes: false });
-	return { kind: 'moved' };
+	const moved = await moveCore(state, newCore.tag, { yes: false });
+	return { kind: 'moved', ...moved };
 }

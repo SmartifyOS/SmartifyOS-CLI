@@ -1,5 +1,6 @@
 import * as clack from '@clack/prompts';
-import { CliError } from '../utils/errors.ts';
+import { CancelledError, CliError } from '../utils/errors.ts';
+import { type ErrorPayload, emit, isJsonMode, type LogLevel } from './json.ts';
 import { brandName, theme } from './theme.ts';
 
 /**
@@ -7,14 +8,25 @@ import { brandName, theme } from './theme.ts';
  * streams, colors or how an error should look.
  */
 
-/** Write a line to stdout. This is the only place allowed to touch stdout directly. */
+/** Internal: the line under an unexpected error, for a person and a program alike. */
+const reportBug =
+	'This is a bug. Please report it at https://github.com/Mauznemo/SmartifyOS-CLI/issues';
+
+/**
+ * Write a line to stdout. This is the only place allowed to touch stdout directly, apart
+ * from the JSON events in json.ts, which is what this turns into with `--json`.
+ */
 export function writeLine(line = ''): void {
-	process.stdout.write(`${line}\n`);
+	if (isJsonMode()) emit({ type: 'text', text: line });
+	else process.stdout.write(`${line}\n`);
 }
 
-/** Write a line to stderr, for anything that is not the actual output of a command. */
+/**
+ * Write a line to stderr, for anything that is not the actual output of a command. With
+ * `--json` it is dropped, since a program asked for the events and nothing else.
+ */
 export function writeErrorLine(line = ''): void {
-	process.stderr.write(`${line}\n`);
+	if (!isJsonMode()) process.stderr.write(`${line}\n`);
 }
 
 /**
@@ -24,18 +36,42 @@ export function writeErrorLine(line = ''): void {
  * somebody's log rather than something anybody will read.
  */
 export function canShowNotice(): boolean {
-	return clack.isTTY(process.stderr) && !clack.isCI();
+	return !isJsonMode() && clack.isTTY(process.stderr) && !clack.isCI();
 }
 
 /** Opens a prompt session with the SmartifyOS header. */
 export function intro(title?: string): void {
-	clack.intro(title ? `${brandName()} ${theme.dim(theme.dim('·'))} ${title}` : brandName());
+	if (isJsonMode()) emit({ type: 'log', level: 'intro', text: title ?? 'SmartifyOS' });
+	else clack.intro(title ? `${brandName()} ${theme.dim(theme.dim('·'))} ${title}` : brandName());
 }
 
 /** Closes a prompt session. */
 export function outro(message: string): void {
-	clack.outro(message);
+	if (isJsonMode()) emit({ type: 'log', level: 'outro', text: message });
+	else clack.outro(message);
 }
+
+/** Internal: one level of {@link log}, clack's for a person and an event for a program. */
+function level(name: LogLevel & keyof typeof clack.log): (text: string, data?: unknown) => void {
+	return (text, data) => {
+		if (isJsonMode())
+			emit({ type: 'log', level: name, text, ...(data === undefined ? {} : { data }) });
+		else clack.log[name](text);
+	};
+}
+
+/**
+ * Lines inside a prompt session. `data` says the same thing as data, for a program reading
+ * `--json`, and is never shown to a person.
+ */
+export const log = {
+	info: level('info'),
+	warn: level('warn'),
+	error: level('error'),
+	success: level('success'),
+	message: level('message'),
+	step: level('step'),
+};
 
 /**
  * Prints an error the way the user should see it.
@@ -56,11 +92,26 @@ export function renderError(error: unknown): void {
 	const stack = error instanceof Error ? (error.stack ?? error.message) : String(error);
 	clack.log.error(theme.error('SmartifyOS ran into an unexpected problem.'));
 	clack.log.message(theme.dim(stack));
-	clack.log.message(
-		theme.dim(
-			'This is a bug. Please report it at https://github.com/Mauznemo/SmartifyOS-CLI/issues',
-		),
-	);
+	clack.log.message(theme.dim(reportBug));
 }
 
-export { log } from '@clack/prompts';
+/** The same as {@link renderError}, as data for the closing event of a `--json` run. */
+export function errorPayload(error: unknown): ErrorPayload {
+	if (error instanceof CancelledError) {
+		return { kind: 'cancelled', message: 'Cancelled, nothing was changed.' };
+	}
+	if (error instanceof CliError) {
+		return {
+			kind: 'user',
+			message: error.message,
+			...(error.hint ? { hint: error.hint } : {}),
+			...(error.details === undefined ? {} : { details: error.details }),
+		};
+	}
+	return {
+		kind: 'bug',
+		message: 'SmartifyOS ran into an unexpected problem.',
+		hint: reportBug,
+		stack: error instanceof Error ? (error.stack ?? error.message) : String(error),
+	};
+}

@@ -1,4 +1,4 @@
-import { renderCommandHelp, renderRootHelp } from '../ui/help.ts';
+import { showCommandHelp, showRootHelp } from '../ui/help.ts';
 import { theme } from '../ui/theme.ts';
 import { CliError } from '../utils/errors.ts';
 import { closest } from '../utils/suggest.ts';
@@ -22,10 +22,7 @@ export const helpCommand: Command = {
 	run({ positionals }) {
 		const name = positionals[0];
 
-		if (!name) {
-			renderRootHelp(visibleCommands());
-			return;
-		}
+		if (!name) return showRootHelp(visibleCommands());
 
 		const command = findCommand(name);
 		const subName = positionals[1];
@@ -44,8 +41,7 @@ export const helpCommand: Command = {
 						: `Run ${theme.code(`${binaryName} help ${name}`)} to see what it can do.`,
 				});
 			}
-			renderCommandHelp(subcommand, command);
-			return;
+			return showCommandHelp(subcommand, command);
 		}
 
 		if (!command) {
@@ -62,6 +58,6 @@ export const helpCommand: Command = {
 			});
 		}
 
-		renderCommandHelp(command);
+		return showCommandHelp(command);
 	},
 };

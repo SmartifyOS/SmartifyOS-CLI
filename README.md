@@ -103,6 +103,52 @@ rm -rf ~/.smartify-os
 
 Then take the `export PATH` line back out of your shell config. It is the one marked `# added by the SmartifyOS installer`.
 
+## Using it from a program
+
+Every command takes `--json`, which is how a GUI or an AI agent drives the CLI. With it, stdout carries one JSON object per line, and nothing else goes to stdout or stderr. Questions are answered by writing JSON lines to stdin, so a program can do everything a person in the terminal can.
+
+```bash
+smartify-os extension remove dashcam --json
+```
+
+```
+{"type":"start","protocol":1,"version":"0.1.1","sha":"a1b2c3d","command":"extension remove"}
+{"type":"log","level":"intro","text":"Remove an extension"}
+{"type":"step","id":"s1","status":"start","text":"Reading your car"}
+{"type":"step","id":"s1","status":"done","text":"Your car runs SmartifyOS 0.2.0, with 1 extension"}
+{"type":"prompt","id":"p1","kind":"confirm","message":"Take Dashcam out of your car?","initialValue":true}
+                                    ← stdin: {"id":"p1","value":true}
+{"type":"step","id":"s2","status":"start","text":"Taking Dashcam out"}
+...
+{"type":"result","ok":true,"exitCode":0,"data":{"changed":true,"extension":{"name":"smartify_os_dashcam",...}}}
+```
+
+The first line is always `start`. The last line is always `result`, which carries what the command did as `data`, or on failure an `error` with `kind` (`user`, `bug` or `cancelled`), `message`, `hint` and, when there is more to say, `details`. For example, `details` holds every build error when a change did not fit. The exit code is the same as without `--json`.
+
+| Event            | What it is                                                                                 |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| `start`          | `protocol`, `version`, `sha`, and the `command` that runs                                  |
+| `log`            | A line for the user: `level` (`info`, `warn`, `error`, `success`, `message`, `intro`, `outro`, `note`), `text`, and sometimes `title` or `data` |
+| `text`           | A line of plain output                                                                     |
+| `step`           | Something being worked on: `id`, `status` (`start`, `update`, `done`, `error`), `text`       |
+| `prompt`         | A question: `id`, `kind` (`text`, `password`, `confirm`, `select`, `multiselect`), `message`, and `options`, `initialValue` or `placeholder` when it has them |
+| `prompt-invalid` | The answer to prompt `id` was refused, `message` says why, and the question is still open  |
+| `output`         | A line printed by Flutter while `extension run` runs: `stream`, `text`                     |
+| `result`         | The end, see above                                                                         |
+
+What a program can write to stdin, one JSON object per line:
+
+| Message                        | What it does                                                          |
+| ------------------------------ | --------------------------------------------------------------------- |
+| `{"id":"p1","value":...}`      | Answers a prompt: `true`/`false`, a string, an option's `value`, or a list of them for `multiselect` |
+| `{"value":...}`                | Answers the next question asked, for piping every answer in up front |
+| `{"id":"p1","cancel":true}`    | Cancels, the same as Ctrl+C                                           |
+| `{"input":"r"}`                | Types into Flutter while `extension run` runs, `r` to reload and `q` to stop |
+
+When stdin ends while a question is open, the command fails and puts the question in `error.details.prompt`, so a program that answered nothing learns what it has to pass as a flag. `--yes` skips every question that has a sensible answer already.
+
+`smartify-os --help --json` describes every command, with its flags and subcommands, and `smartify-os <command> --help --json` describes one. That is enough to build a form for any of them.
+
 ## Supported platforms
 
 | System  | Builds                                           |

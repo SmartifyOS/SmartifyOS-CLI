@@ -1,7 +1,14 @@
 import { displayUrl } from '../../core/git.ts';
-import { describeVersion, findEntry, type Installed, readCar } from '../../core/project/car.ts';
+import {
+	describeVersion,
+	findEntry,
+	type Installed,
+	packageData,
+	readCar,
+} from '../../core/project/car.ts';
 import { carFiles, requireCar } from '../../core/project/find.ts';
 import { isSwitchedOn } from '../../core/project/main-dart.ts';
+import { isJsonMode } from '../../ui/json.ts';
 import { writeLine } from '../../ui/output.ts';
 import { theme } from '../../ui/theme.ts';
 import { binaryName } from '../flags.ts';
@@ -30,14 +37,21 @@ export const extensionListCommand: Command = {
 			['SmartifyOS', describeVersion(state.core), where(state.core)],
 		];
 		const notes: string[] = [];
+		const extensions = [];
 
 		for (const extension of state.extensions) {
 			rows.push([extension.title, describeVersion(extension), where(extension)]);
 			const entry = extension.root ? await findEntry(extension.name, extension.root) : undefined;
-			if (entry && mainText !== undefined && !isSwitchedOn(mainText, entry)) {
+			// Null when it cannot be told, which is when nothing is printed about it either.
+			const switchedOn = entry && mainText !== undefined ? isSwitchedOn(mainText, entry) : null;
+			if (switchedOn === false) {
 				notes.push(`${extension.title} is not switched on in lib/main.dart.`);
 			}
+			extensions.push({ ...packageData(extension), switchedOn });
 		}
+		const data = { smartifyOs: packageData(state.core), extensions };
+		// The table below is for a person. A program has all of it in the data already.
+		if (isJsonMode()) return data;
 
 		const nameWidth = Math.max(...rows.map((row) => row[0].length));
 		const versionWidth = Math.max(...rows.map((row) => row[1].length));
@@ -59,6 +73,7 @@ export const extensionListCommand: Command = {
 			writeLine(`  ${theme.warn(note)}`);
 		}
 		writeLine();
+		return data;
 	},
 };
 
