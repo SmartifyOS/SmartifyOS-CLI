@@ -1,6 +1,8 @@
 import { rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { analyzeErrors, type Problem, packageConfigPath, pubGet, pubUpgrade } from '../flutter.ts';
+import { checkPackage } from '../linux/collect.ts';
+import type { ListProblem } from '../linux/lists.ts';
 import { lastLines } from '../process.ts';
 import { dependsOnCore, readPackageRoots, readPubspecIn } from '../pubspec/read.ts';
 import { corePackage } from '../smartify-os.ts';
@@ -31,6 +33,12 @@ export interface Change {
 	 * code that does not build yet is simply work in progress.
 	 */
 	check?: boolean;
+	/**
+	 * Packages whose Linux lists (`smartify_os:` in their pubspec.yaml) are checked once
+	 * fetched. A mistake there is rejected here, loudly, rather than skipped with a warning
+	 * on a car. Checked even when `check` is off.
+	 */
+	linux?: string[];
 	onStep?(step: ChangeStep): void;
 }
 
@@ -39,7 +47,9 @@ export type ChangeFailure =
 	/** Pub could not fit the packages together. `output` is its explanation. */
 	| { kind: 'fetch'; output: string }
 	/** It fetched, but does not build. The errors, by the package they are in. */
-	| { kind: 'build'; problems: PackageProblems[] };
+	| { kind: 'build'; problems: PackageProblems[] }
+	/** What a package lists for Linux has mistakes, by the package they are in. */
+	| { kind: 'linux'; packages: { name: string; problems: ListProblem[] }[] };
 
 /** The errors in one package. `name` is undefined for the car's app itself. */
 export interface PackageProblems {
@@ -137,6 +147,12 @@ export async function tryChange(app: CarApp, change: Change): Promise<ChangeResu
 			}
 		}
 		await change.afterFetch?.();
+
+		const linux = await checkLinuxLists(app, change.linux ?? []);
+		if (linux.length > 0) {
+			await undo();
+			return { ok: false, failure: { kind: 'linux', packages: linux } };
+		}
 	} catch (error) {
 		await undo();
 		throw error;
@@ -162,6 +178,26 @@ export async function tryChange(app: CarApp, change: Change): Promise<ChangeResu
 	}
 
 	return { ok: false, failure: { kind: 'build', problems: groupByPackage(caused) } };
+}
+
+/**
+ * Internal: the mistakes in what these packages list for Linux, as the app resolved them.
+ * Keys this CLI does not know are not mistakes, they come from a newer SmartifyOS.
+ */
+async function checkLinuxLists(
+	app: CarApp,
+	names: string[],
+): Promise<{ name: string; problems: ListProblem[] }[]> {
+	if (names.length === 0) return [];
+	const roots = await readPackageRoots(app.dir);
+	const found: { name: string; problems: ListProblem[] }[] = [];
+	for (const name of names) {
+		const root = roots.get(name);
+		if (!root) continue;
+		const problems = (await checkPackage(root, name)).filter((p) => p.kind === 'invalid');
+		if (problems.length > 0) found.push({ name, problems });
+	}
+	return found;
 }
 
 /** Internal: an error with the package it is in, which is what makes two runs comparable. */

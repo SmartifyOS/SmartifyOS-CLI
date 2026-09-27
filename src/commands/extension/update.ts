@@ -127,6 +127,7 @@ export const extensionUpdateCommand: Command = {
 					await writePubspec(app, text);
 				},
 				upgrade: current.filter((plan) => 'upgrade' in plan).map((plan) => plan.extension.name),
+				linux: current.map((plan) => plan.extension.name),
 				onStep: followSteps(progress),
 			});
 
@@ -145,7 +146,9 @@ export const extensionUpdateCommand: Command = {
 			const failing =
 				tried.failure.kind === 'build'
 					? new Set(tried.failure.problems.map((group) => group.name))
-					: new Set<string | undefined>();
+					: tried.failure.kind === 'linux'
+						? new Set<string | undefined>(tried.failure.packages.map((found) => found.name))
+						: new Set<string | undefined>();
 			const rest = current.filter((plan) => !failing.has(plan.extension.name));
 			if (
 				tried.failure.kind === 'fetch' ||
@@ -156,7 +159,9 @@ export const extensionUpdateCommand: Command = {
 
 			for (const plan of current.filter((p) => failing.has(p.extension.name))) {
 				log.warn(
-					`${theme.strong(plan.extension.title)} ${target(plan)} does not build in this car, it is left out.`,
+					tried.failure.kind === 'linux'
+						? `${theme.strong(plan.extension.title)} ${target(plan)} lists something for Linux that cannot be installed, it is left out.`
+						: `${theme.strong(plan.extension.title)} ${target(plan)} does not build in this car, it is left out.`,
 				);
 			}
 			plans = rest;

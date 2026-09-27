@@ -2,7 +2,8 @@ import { dirname } from 'node:path';
 import { CliError } from '../utils/errors.ts';
 
 /**
- * Running the tools the CLI hides: `flutter`, `dart` and `git`.
+ * Running the tools the CLI hides: `flutter`, `dart` and `git`, and `tar`, `bash` and `sudo`
+ * for putting SmartifyOS on a car.
  *
  * Everything goes through here so that a missing tool is always the same friendly message,
  * and so that output is captured rather than sprayed over the prompts. Only `inherit` hands
@@ -10,7 +11,7 @@ import { CliError } from '../utils/errors.ts';
  * {@link runStreaming} is the same for a program driving the CLI with `--json`.
  */
 
-export type Tool = 'flutter' | 'dart' | 'git';
+export type Tool = 'flutter' | 'dart' | 'git' | 'tar' | 'bash' | 'sudo';
 
 /** What a finished process left behind. */
 export interface ProcessResult {
@@ -31,9 +32,19 @@ const installHints: Record<Tool, string> = {
 		'Install Flutter from https://docs.flutter.dev/get-started/install and open a new terminal.',
 	dart: 'It comes with Flutter. Install Flutter from https://docs.flutter.dev/get-started/install and open a new terminal.',
 	git: 'Install git from https://git-scm.com/downloads and open a new terminal.',
+	tar: 'It comes with macOS, Linux and Windows 10 or newer. Install tar with your package manager.',
+	bash: 'It comes with every Linux. Install bash with your package manager.',
+	sudo: 'Install sudo with your package manager, or run this as root.',
 };
 
-const toolNames: Record<Tool, string> = { flutter: 'Flutter', dart: 'Dart', git: 'git' };
+const toolNames: Record<Tool, string> = {
+	flutter: 'Flutter',
+	dart: 'Dart',
+	git: 'git',
+	tar: 'tar',
+	bash: 'bash',
+	sudo: 'sudo',
+};
 
 /**
  * Where a tool is on this machine.
@@ -125,10 +136,15 @@ export async function runOrThrow(
  * Runs a tool in the user's own terminal, keys and colors included, and gives back its
  * exit code. For `flutter run`, which is interactive.
  */
-export async function runInTerminal(tool: Tool, args: string[], cwd?: string): Promise<number> {
+export async function runInTerminal(
+	tool: Tool,
+	args: string[],
+	cwd?: string,
+	env: Record<string, string> = {},
+): Promise<number> {
 	const proc = Bun.spawn([findTool(tool), ...args], {
 		cwd,
-		env: { ...process.env },
+		env: { ...process.env, ...env },
 		stdin: 'inherit',
 		stdout: 'inherit',
 		stderr: 'inherit',
@@ -154,10 +170,11 @@ export function runStreaming(
 	args: string[],
 	cwd: string | undefined,
 	onLine: (stream: 'stdout' | 'stderr', line: string) => void,
+	env: Record<string, string> = {},
 ): StreamingProcess {
 	const proc = Bun.spawn([findTool(tool), ...args], {
 		cwd,
-		env: { ...process.env },
+		env: { ...process.env, ...env },
 		stdin: 'pipe',
 		stdout: 'pipe',
 		stderr: 'pipe',

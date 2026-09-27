@@ -22,6 +22,7 @@ src/commands/       one file per command, switched on in commands/index.ts. A gr
                     like `extension` has a folder, one file per subcommand
 src/ui/             anything that talks to the terminal, including help rendering
 src/core/           process runners, config, paths, the real work
+src/core/linux/     what a car needs installed on Linux, and scripts/, the shell that runs on it
 src/utils/          small helpers with no opinion about the terminal
 scripts/build.ts    cross compiles every target
 ```
@@ -53,6 +54,14 @@ Commands about one kind of thing are grouped under it, `extension add`, `extensi
 A car's `pubspec.yaml` names where SmartifyOS and every extension come from, under `dependency_overrides`, and that block is the CLI's (see `src/core/project/block.ts`). It is edited line by line with `src/core/pubspec/blocks.ts`, never parsed and written back, so the owner's comments survive.
 
 **Every change to what a car runs goes through `tryChange`** in `src/core/project/change.ts`. Pub never checks an extension's SmartifyOS lower bound (the override hides it), so fetching and analyzing, and putting every file back on errors, is the only check there is. It analyzes each extension's `lib` with the app's `package_config.json`: `flutter analyze` on the app alone never reports errors inside a dependency.
+
+## What runs on the car
+
+`export installer` and `export update` put a `smartify-os` folder on a USB stick (layout in `src/core/export/export.ts`). What runs on the car is shell, in `src/core/linux/scripts/`, embedded in the binary as text. **`linux.sh` is the one step** every install, build on a car, build for a car and (later) update on the car runs, so there is never a second way of doing it. It installs a package set as one generated `.deb`, stateless every time. The CLI checks and merges the lists, the script only carries them out.
+
+The scripts have to run under the bash 3.2 macOS ships, so `bun test` can run them against the stub apt in `linux.test.ts`: no associative arrays, no `mapfile`. Never `cmd | grep -q` under `pipefail` (grep exits early, the writer dies of SIGPIPE, a match becomes a failure), use a here-string.
+
+The official Linux is named in one place, `src/core/linux/distro.ts`. Debian 13 is a stand in until it is decided.
 
 ## Writing style
 

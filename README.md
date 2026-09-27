@@ -5,7 +5,7 @@ The command line tool for [SmartifyOS](https://smartify-os.com/), the open sourc
 It does the complicated parts for you. You should never have to touch `flutter`, `git` or `adb` to build a system for your car.
 
 > [!NOTE]
-> This is early days. The tool keeps your car's SmartifyOS and extensions up to date, helps you make your own extensions, and keeps itself up to date. The commands for setting up and building a car system are still on their way.
+> This is early days. The tool keeps your car's SmartifyOS and extensions up to date, puts it on a USB stick for your car, helps you make your own extensions, and keeps itself up to date. Setting up the car's system itself (starting SmartifyOS when the car starts, and the rest) is still on its way.
 
 ## Install
 
@@ -55,6 +55,26 @@ smartify-os extension list             # what your car runs, and which versions
 Every one of them tries the change before it keeps it: it fetches the new versions and checks that your app and every extension still build. If anything does not, it puts everything back the way it was and tells you which extension is at fault. A new SmartifyOS that an extension has not caught up with yet is not a problem: the update offers that extension's newest release along with it, or leaves your car as it was when there is none.
 
 Adding an extension also switches it on in `lib/main.dart` for you, and removing one takes it out again.
+
+## Putting it on your car
+
+SmartifyOS goes onto the car on a USB stick. Run these in your car's app folder too.
+
+```bash
+smartify-os export installer           # set up a new car
+smartify-os export update              # update a car that runs SmartifyOS already
+```
+
+Both ask which USB stick to use (or take `--to <folder>`) and put a `smartify-os` folder on it. For a new car, install Debian 13 on it, plug the stick in and run `bash /media/<you>/<stick>/smartify-os/install.sh` there once. It asks for the password once and needs the internet. `README.txt` on the stick says the same. For an update, plug the stick into the car while SmartifyOS runs.
+
+SmartifyOS is built one of two ways, picked with `--build-on`:
+
+| `--build-on` | What happens                                                                                          |
+| ------------ | ----------------------------------------------------------------------------------------------------- |
+| `car`        | The stick gets your app's source, and the car installs Flutter and builds it. Works from any computer |
+| `computer`   | This computer builds it, and the car only gets the finished app. Needs this computer to run Debian 13 too, since a Linux build only starts on the Linux it was built on |
+
+Whatever your car needs installed on Linux (a driver, a program an extension runs, a library to build against) is installed for you, worked out from SmartifyOS, every extension and your own app. Extensions list it in their `pubspec.yaml`, see "Linux packages" in `EXTENSIONS.md`. It all goes in as one package called `smartify-os-run` (and `smartify-os-build` on a car that builds itself), so whatever an extension stops needing is taken out again, and nothing you installed yourself is ever touched. Something that would take part of the car's system out to make room is left out, with a warning naming the extension that asked for it.
 
 ## Making an extension
 

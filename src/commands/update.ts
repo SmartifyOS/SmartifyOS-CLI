@@ -300,7 +300,7 @@ export async function moveCore(
 		const stay = `Your car stays on SmartifyOS ${describeVersion(state.core)}, nothing was changed.`;
 
 		const { failure } = result;
-		if (failure.kind === 'fetch' || failure.problems.some((group) => !group.name)) {
+		if (failure.kind !== 'build' || failure.problems.some((group) => !group.name)) {
 			renderChangeFailure(failure, titleOf);
 			throw new CliError(stay, {
 				details: failure,

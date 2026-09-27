@@ -1,3 +1,4 @@
+import { exportCommand } from './export/index.ts';
 import { extensionCommand } from './extension/index.ts';
 import { helpCommand } from './help.ts';
 import { linkCommand } from './link.ts';
@@ -19,6 +20,7 @@ import { updateCommand } from './update.ts';
 register(
 	updateCommand,
 	extensionCommand,
+	exportCommand,
 	linkCommand,
 	unlinkCommand,
 	selfUpdateCommand,

@@ -91,8 +91,10 @@ export const linkCommand: Command = {
 				if (installed) return;
 				switched = await switchOnInFile(carFiles(app).main, await findEntry(name, folder));
 			},
-			// Code being worked on does not always build, and that is fine here.
+			// Code being worked on does not always build, and that is fine here. What it lists
+			// for Linux still has to be right, since that is what a car would install.
 			check: false,
+			linux: [name],
 			onStep: followSteps(progress),
 		});
 
@@ -101,7 +103,10 @@ export const linkCommand: Command = {
 			renderChangeFailure(result.failure, (n) => n);
 			throw new CliError('Nothing was changed.', {
 				details: result.failure,
-				hint: `The packages of the copy in ${path} do not fit together with the ones in your car.`,
+				hint:
+					result.failure.kind === 'linux'
+						? `Fix that in the pubspec.yaml in ${path}, then link it again. EXTENSIONS.md ("Linux packages") says how.`
+						: `The packages of the copy in ${path} do not fit together with the ones in your car.`,
 			});
 		}
 

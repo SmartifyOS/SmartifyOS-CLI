@@ -1,6 +1,7 @@
 import { type CarState, describeVersion, readCar } from '../core/project/car.ts';
 import type { ChangeFailure, ChangeStep } from '../core/project/change.ts';
 import type { CarApp } from '../core/project/find.ts';
+import { listProblemLines } from './linux.ts';
 import { log } from './output.ts';
 import { spinner } from './prompt.ts';
 import { theme } from './theme.ts';
@@ -35,6 +36,19 @@ export function renderChangeFailure(
 	if (failure.kind === 'fetch') {
 		log.error('These packages do not fit together.', failure);
 		log.message(theme.dim(failure.output));
+		return;
+	}
+
+	if (failure.kind === 'linux') {
+		for (const found of failure.packages) {
+			log.error(
+				[
+					`${theme.strong(titleOf(found.name))} lists something for Linux that cannot be installed:`,
+					...listProblemLines(found.problems),
+				].join('\n'),
+				{ package: found.name, title: titleOf(found.name), problems: found.problems },
+			);
+		}
 		return;
 	}
 

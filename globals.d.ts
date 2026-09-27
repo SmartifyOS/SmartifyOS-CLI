@@ -11,3 +11,12 @@ declare const __BUILD_SHA__: string;
  * running from source.
  */
 declare const __BUILD_TARGET__: string;
+
+/**
+ * A shell script imported as text, `import script from './linux.sh' with { type: 'text' }`,
+ * which `bun build --compile` puts inside the binary.
+ */
+declare module '*.sh' {
+	const text: string;
+	export default text;
+}

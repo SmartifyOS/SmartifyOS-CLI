@@ -1,9 +1,8 @@
-import { existsSync } from 'node:fs';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CliError } from '../../utils/errors.ts';
+import { addPlatforms } from '../flutter.ts';
 import type { GitSource } from '../git.ts';
-import { runOrThrow } from '../process.ts';
 import { gitEntry, pathEntry } from '../project/block.ts';
 import { setEntry } from '../pubspec/blocks.ts';
 import { corePackage, type NeededOverride } from '../smartify-os.ts';
@@ -164,26 +163,9 @@ export async function removeFolder(dir: string): Promise<void> {
 }
 
 /**
- * What `flutter create` adds to an example app besides the platform folders, none of which
- * belongs there: a `widget_test.dart` that does not compile against the example, an
- * `analysis_options.yaml` that includes `flutter_lints`, which the example does not depend
- * on, and a README about "a new Flutter project".
- */
-const createLeftovers = ['test', 'analysis_options.yaml', 'README.md'];
-
-/**
  * Gives an extension's example app the folders for these desktop platforms, and takes back
  * out whatever else `flutter create` put there that was not there before.
  */
 export async function addExamplePlatforms(example: string, platforms: string[]): Promise<void> {
-	const had = new Set(createLeftovers.filter((name) => existsSync(join(example, name))));
-	await runOrThrow(
-		'flutter',
-		['create', `--platforms=${platforms.join(',')}`, '--project-name', 'example', '.'],
-		{ message: 'Flutter could not set up the example app.' },
-		{ cwd: example },
-	);
-	for (const name of createLeftovers) {
-		if (!had.has(name)) await rm(join(example, name), { recursive: true, force: true });
-	}
+	await addPlatforms(example, platforms, 'example');
 }

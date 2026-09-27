@@ -113,6 +113,7 @@ export const extensionAddCommand: Command = {
 				const entry = root ? await findEntry(extension.packageName, root) : undefined;
 				switched = await switchOnInFile(carFiles(app).main, entry);
 			},
+			linux: [extension.packageName],
 			onStep: followSteps(progress),
 		});
 
@@ -126,7 +127,9 @@ export const extensionAddCommand: Command = {
 				hint:
 					result.failure.kind === 'build'
 						? `It does not build with SmartifyOS ${state.core.version ?? coreVersion}. Its author may not have caught up with it yet.`
-						: 'It needs packages that cannot be used together with the ones in your car.',
+						: result.failure.kind === 'linux'
+							? 'Its author has to fix that in its pubspec.yaml, EXTENSIONS.md ("Linux packages") says how.'
+							: 'It needs packages that cannot be used together with the ones in your car.',
 			});
 		}
 
