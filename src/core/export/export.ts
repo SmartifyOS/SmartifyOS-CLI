@@ -153,7 +153,8 @@ export function renderReadme(input: ExportInput): string {
 			? [
 					'SmartifyOS installer',
 					'',
-					`1. Install ${officialLinux.name} on the car, and log in as the user SmartifyOS should run as.`,
+					`1. Install ${officialLinux.name} on the car (${officialLinux.piName} on a Raspberry Pi),`,
+					'   and log in as the user SmartifyOS should run as.',
 					'2. Plug this USB stick in, and open a terminal.',
 					'3. Run this, with the folder the stick is in (often /media/<you>/<stick>):',
 					'',

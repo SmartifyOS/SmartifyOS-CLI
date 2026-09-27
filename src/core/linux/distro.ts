@@ -5,7 +5,9 @@
  * (they get it through export.conf), so moving to another release, or another apt based
  * distribution altogether, is an edit to this file and nothing else.
  *
- * Debian 13 is a stand in until the choice is made.
+ * Debian 13 on x64, and Raspberry Pi OS Lite on a Raspberry Pi, which is Debian 13 with
+ * Raspberry Pi's kernel and reports itself as Debian 13 too. Why is in LINUX_SYSTEM.md in
+ * the SmartifyOS repository.
  */
 export const officialLinux = {
 	/** `ID` in /etc/os-release. */
@@ -14,6 +16,10 @@ export const officialLinux = {
 	versionId: '13',
 	/** What a person reads. */
 	name: 'Debian 13',
+	/** What a Raspberry Pi runs of it. */
+	piName: 'Raspberry Pi OS Lite (64-bit)',
+	/** The container image of it, which builds for a car on any computer. */
+	image: 'debian:13',
 } as const;
 
 /** The architectures a car can have, in SmartifyOS's own words (Flutter's, too). */

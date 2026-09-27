@@ -245,6 +245,9 @@ cmd_check() {
 
 	while IFS= read -r file; do
 		for lib in $(ldd "$file" 2>/dev/null | awk '$2 == "=>" && $3 == "not" { print $1 }'); do
+			# A plugin finds what the build ships (the engine above all) through the program
+			# that loads it, which ldd on the plugin alone cannot know.
+			if [ -e "$bundle/lib/$lib" ]; then continue; fi
 			missing=1
 			plugin=$(plugin_of "$file")
 			if [ -n "$plugin" ]; then
@@ -394,7 +397,8 @@ cmd_packages() {
 		if [ -f "$set/apt.list" ]; then apt_entries "$set/apt.list" "$arch"; fi
 		if [ -n "$bundle" ]; then
 			step 'Reading which libraries the build links against'
-			cmd_libraries "$bundle" | apt_entries - "$arch"
+			# Which file of the build needs each one is too much to read, so they are the build's.
+			cmd_libraries "$bundle" | awk -F'\t' '{ print $1 "\t" $2 "\tthe build" }' | apt_entries - "$arch"
 		fi
 	} | valid_names | merge_entries >"$work/wanted"
 

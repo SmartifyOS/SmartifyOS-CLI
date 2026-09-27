@@ -65,14 +65,16 @@ smartify-os export installer           # set up a new car
 smartify-os export update              # update a car that runs SmartifyOS already
 ```
 
-Both ask which USB stick to use (or take `--to <folder>`) and put a `smartify-os` folder on it. For a new car, install Debian 13 on it, plug the stick in and run `bash /media/<you>/<stick>/smartify-os/install.sh` there once. It asks for the password once and needs the internet. `README.txt` on the stick says the same. For an update, plug the stick into the car while SmartifyOS runs.
+Both ask which USB stick to use (or take `--to <folder>`) and put a `smartify-os` folder on it. For a new car, install Debian 13 on it (Raspberry Pi OS Lite on a Raspberry Pi), plug the stick in and run `bash /media/<you>/<stick>/smartify-os/install.sh` there once. It asks for the password once and needs the internet. `README.txt` on the stick says the same. For an update, plug the stick into the car while SmartifyOS runs.
 
 SmartifyOS is built one of two ways, picked with `--build-on`:
 
 | `--build-on` | What happens                                                                                          |
 | ------------ | ----------------------------------------------------------------------------------------------------- |
 | `car`        | The stick gets your app's source, and the car installs Flutter and builds it. Works from any computer |
-| `computer`   | This computer builds it, and the car only gets the finished app. Needs this computer to run Debian 13 too, since a Linux build only starts on the Linux it was built on |
+| `computer`   | This computer builds it in a Debian 13 container, and the car only gets the finished app. Needs [Docker Desktop](https://docs.docker.com/get-docker/) running (or Podman), or this computer to run Debian 13 itself |
+
+Building on this computer asks what the car runs on, or takes `--arch arm64` (a Raspberry Pi) or `--arch x64` (a PC). A Linux build only starts on the Linux it was built on, which is why it is built in a container of the car's Linux. The first build sets the container up with Flutter and everything building needs, which takes a while. It is kept, stopped, so every build after it is quick. Building for the other architecture than this computer's runs emulated and takes a good deal longer. `docker rm -f smartify-os-builder-arm64` (or `-x64`) throws a container away, if you ever want the space back.
 
 Whatever your car needs installed on Linux (a driver, a program an extension runs, a library to build against) is installed for you, worked out from SmartifyOS, every extension and your own app. Extensions list it in their `pubspec.yaml`, see "Linux packages" in `EXTENSIONS.md`. It all goes in as one package called `smartify-os-run` (and `smartify-os-build` on a car that builds itself), so whatever an extension stops needing is taken out again, and nothing you installed yourself is ever touched. Something that would take part of the car's system out to make room is left out, with a warning naming the extension that asked for it.
 

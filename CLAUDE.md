@@ -61,7 +61,7 @@ A car's `pubspec.yaml` names where SmartifyOS and every extension come from, und
 
 The scripts have to run under the bash 3.2 macOS ships, so `bun test` can run them against the stub apt in `linux.test.ts`: no associative arrays, no `mapfile`. Never `cmd | grep -q` under `pipefail` (grep exits early, the writer dies of SIGPIPE, a match becomes a failure), use a here-string.
 
-The official Linux is named in one place, `src/core/linux/distro.ts`. Debian 13 is a stand in until it is decided.
+The official Linux is named in one place, `src/core/linux/distro.ts`: Debian 13, and Raspberry Pi OS Lite on a Pi, which reports itself as Debian 13 (why is in `LINUX_SYSTEM.md` in the SmartifyOS repo). Building for a car on another computer happens in a kept container of that image, set up with the same `linux.sh` steps a car runs (`src/core/export/container.ts`), never with a Dockerfile of its own.
 
 ## Writing style
 

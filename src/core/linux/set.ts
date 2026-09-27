@@ -103,7 +103,7 @@ function field(text: string): string {
 }
 
 function requesters(list: Requester[]): string {
-	return field(list.map((r) => r.title).join(', '));
+	return field([...new Set(list.map((r) => r.title))].join(', '));
 }
 
 const header = (columns: string) => [

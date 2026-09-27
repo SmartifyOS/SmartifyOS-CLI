@@ -3,33 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CliError } from '../../utils/errors.ts';
 import type { AptNeed, CarNeeds } from '../linux/collect.ts';
-import { hostArch, type LinuxArch, officialLinux, runsOfficialLinux } from '../linux/distro.ts';
+import type { LinuxArch } from '../linux/distro.ts';
 import { scripts } from '../linux/scripts.ts';
 import { addNeeds, flutterToolchainNeeds, parseAptList, renderSet } from '../linux/set.ts';
-import { lastLines, run } from '../process.ts';
+import { lastLines, type ProcessResult, run } from '../process.ts';
 
 /**
- * Building the car's app into a finished Linux build on this computer.
- *
- * A Flutter Linux build records the exact library versions it was linked against, so it only
- * starts on the Linux it was built on. That makes this possible only on a computer running
- * the official Linux, on the car's architecture. Anywhere else it will be done in a
- * container, which is where this grows next.
+ * Building the car's app into a finished Linux build right here, on a computer that runs
+ * the official Linux itself, and what that and a build in a container (container.ts) share.
  */
-
-/** Whether this computer can build for a car, and for which architecture. */
-export type BuildHere = { ok: true; arch: LinuxArch } | { ok: false; reason: string };
-
-export async function canBuildHere(): Promise<BuildHere> {
-	const arch = hostArch();
-	if (!(await runsOfficialLinux()) || !arch) {
-		return {
-			ok: false,
-			reason: `Building for a car on this computer needs it to run ${officialLinux.name}, which the car runs too, and this one does not.`,
-		};
-	}
-	return { ok: true, arch };
-}
 
 /**
  * The name of the program in a build of the car's app, from `BINARY_NAME` in its
@@ -99,9 +81,22 @@ export async function bundleLibraries(
 			hint: lastLines(result.stderr),
 		});
 	}
+	return parseLibraries(result);
+}
+
+/** What `linux.sh libraries` printed: the packages on stdout, the warnings on stderr. */
+export function parseLibraries(result: Pick<ProcessResult, 'stdout' | 'stderr'>): {
+	libraries: AptNeed[];
+	warnings: string[];
+} {
 	const warnings = result.stderr
 		.split('\n')
-		.map((line) => line.replace(/^\s*!\s*/, '').trim())
-		.filter(Boolean);
-	return { libraries: addNeeds([], parseAptList(result.stdout)), warnings };
+		.filter((line) => /^\s*!/.test(line))
+		.map((line) => line.replace(/^\s*!\s*/, '').trim());
+	// Which file of the build needs each is kept for a program, a person reads "the build".
+	const libraries = parseAptList(result.stdout).map((need) => ({
+		...need,
+		requesters: need.requesters.map((r) => ({ name: r.name, title: 'the build' })),
+	}));
+	return { libraries: addNeeds([], libraries), warnings };
 }

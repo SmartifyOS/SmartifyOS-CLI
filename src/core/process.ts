@@ -2,8 +2,8 @@ import { dirname } from 'node:path';
 import { CliError } from '../utils/errors.ts';
 
 /**
- * Running the tools the CLI hides: `flutter`, `dart` and `git`, and `tar`, `bash` and `sudo`
- * for putting SmartifyOS on a car.
+ * Running the tools the CLI hides: `flutter`, `dart` and `git`, and `tar`, `bash`, `sudo` and
+ * a container engine for putting SmartifyOS on a car.
  *
  * Everything goes through here so that a missing tool is always the same friendly message,
  * and so that output is captured rather than sprayed over the prompts. Only `inherit` hands
@@ -11,7 +11,7 @@ import { CliError } from '../utils/errors.ts';
  * {@link runStreaming} is the same for a program driving the CLI with `--json`.
  */
 
-export type Tool = 'flutter' | 'dart' | 'git' | 'tar' | 'bash' | 'sudo';
+export type Tool = 'flutter' | 'dart' | 'git' | 'tar' | 'bash' | 'sudo' | 'docker' | 'podman';
 
 /** What a finished process left behind. */
 export interface ProcessResult {
@@ -35,6 +35,8 @@ const installHints: Record<Tool, string> = {
 	tar: 'It comes with macOS, Linux and Windows 10 or newer. Install tar with your package manager.',
 	bash: 'It comes with every Linux. Install bash with your package manager.',
 	sudo: 'Install sudo with your package manager, or run this as root.',
+	docker: 'Install Docker Desktop from https://docs.docker.com/get-docker/ and start it.',
+	podman: 'Install Podman from https://podman.io/docs/installation and start it.',
 };
 
 const toolNames: Record<Tool, string> = {
@@ -44,6 +46,8 @@ const toolNames: Record<Tool, string> = {
 	tar: 'tar',
 	bash: 'bash',
 	sudo: 'sudo',
+	docker: 'Docker',
+	podman: 'Podman',
 };
 
 /**
