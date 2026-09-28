@@ -19,6 +19,9 @@
 #       Installs Flutter at that version into dir.
 #   linux.sh build <app> --flutter <dir> [--user NAME]
 #       Builds the car's app for Linux, and prints the folder of the finished build.
+#   linux.sh system
+#       Sets the car up to start straight into SmartifyOS, as the user in
+#       /etc/smartify-os/car.conf: its service, passwordless sudo, a quiet start.
 #
 # It never asks anything. Installing needs root, or sudo that asks for no password.
 
@@ -512,10 +515,22 @@ apply_set() {
 	fi
 
 	need_root
-	step 'Updating the package lists'
-	as_root apt-get update -qq ||
-		fail 'The package lists could not be updated.' \
-			'This needs the internet. Connect to Wi-Fi or a phone hotspot and run it again.'
+	# Only something missing has to be downloaded. Without that, the new .deb depends on
+	# what is installed already, so a car takes an update that needs less than before, or
+	# other udev rules, without the internet.
+	if [ -s "$work/missing" ]; then
+		step 'Updating the package lists'
+		# apt only warns when it cannot reach the internet, and would then fail to download
+		# every package, which says far less about why.
+		local updated
+		if ! updated=$(as_root apt-get update -qq 2>&1) ||
+			grep -Eq 'Temporary failure resolving|Could not resolve|Network is unreachable|Could not connect' <<<"$updated"; then
+			printf '%s\n' "$updated" >&2
+			fail 'The package lists could not be updated.' \
+				'This needs the internet. Connect to Wi-Fi or a phone hotspot and run it again.'
+		fi
+		if [ -n "$updated" ]; then printf '%s\n' "$updated" >&2; fi
+	fi
 
 	# 2. Every name has to exist. One that does not is almost always a typo or a package
 	# renamed in a newer release, and apt's own error would not say whose it is.
@@ -651,8 +666,13 @@ cmd_build() {
 	cd "$app"
 	export PATH="$flutter_dir/bin:$PATH"
 	step 'Fetching packages'
-	as_user flutter pub get >&2 ||
-		fail "The car's packages could not be fetched." 'This needs the internet. Connect to Wi-Fi or a phone hotspot and run it again.'
+	# What the last build fetched is enough when the app's packages did not change, which
+	# lets an update that only changes the app itself build without the internet. Exactly the
+	# versions in pubspec.lock, or it goes online for them.
+	if ! as_user flutter pub get --offline --enforce-lockfile >/dev/null 2>&1; then
+		as_user flutter pub get >&2 ||
+			fail "The car's packages could not be fetched." 'This needs the internet. Connect to Wi-Fi or a phone hotspot and run it again.'
+	fi
 	step 'Building SmartifyOS (this takes a few minutes the first time)'
 	as_user flutter build linux --release >&2 || fail 'SmartifyOS did not build.' 'What Flutter printed above says why.'
 
@@ -661,10 +681,362 @@ cmd_build() {
 	printf '%s\n' "$bundle"
 }
 
+# -- The car's own system -----------------------------------------------------------------
+#
+# What makes a computer a car: it starts straight into SmartifyOS, full screen, with no
+# desktop, login screen or cursor, and SmartifyOS updates itself and opens USB sticks
+# without anybody typing a password. What this needs installed is in the run set (carSystem
+# in src/core/linux/set.ts). Every file is written whole every time, so running it again
+# repairs anything changed by hand, and nothing depends on it having run before.
+
+# Where the files go. Only the tests set it, to a folder standing in for /.
+sysroot=${SMARTIFY_OS_SYSROOT:-}
+
+# What SmartifyOS runs as. An update relies on it starting SmartifyOS again when it quits.
+service_name=smartify-os.service
+# A cursor theme whose every cursor is one transparent pixel, which is how there is none.
+hidden_cursor=smartify-os-hidden
+# Keeps the kernel's messages and the blinking text cursor off the screen while the car
+# starts. They are all still in the journal.
+quiet_boot_options='quiet loglevel=3 vt.global_cursor_default=0'
+# Around what this adds to a file that is not its own, so the next run replaces it.
+block_start='# SmartifyOS: written by its installer, and replaced every time it runs'
+block_end='# SmartifyOS: end'
+
+# put_file <path> [mode]: stdin into a file below sysroot, swapped in whole. Without a mode
+# it keeps the one it gets, which on the Pi's FAT boot partition is the only one there is.
+put_file() {
+	local path="$sysroot$1" mode=${2:-}
+	mkdir -p "$(dirname "$path")"
+	cat >"$path.smartify-os-new"
+	if [ -n "$mode" ]; then chmod "$mode" "$path.smartify-os-new"; fi
+	mv -f "$path.smartify-os-new" "$path"
+}
+
+# A file without the block this added to it last time.
+strip_block() {
+	awk -v start="$block_start" -v end="$block_end" '$0 == start { skip = 1 } !skip { print } $0 == end { skip = 0 }'
+}
+
+# systemctl on this machine, or offline on the one the tests stand in for.
+unit_ctl() {
+	if [ -n "$sysroot" ]; then systemctl --root="$sysroot" "$@"; else systemctl "$@"; fi
+}
+
+system_sudo() {
+	local user=$1 file
+	file=$(mktemp)
+	printf '%s\n' \
+		'# Written by the SmartifyOS installer. SmartifyOS installs updates, and what its' \
+		'# extensions need, by itself, and nobody in a car is there to type a password.' \
+		"$user ALL=(ALL:ALL) NOPASSWD: ALL" >"$file"
+	chmod 0440 "$file"
+	# A broken file in sudoers.d breaks sudo altogether, so it is checked before it goes in.
+	if ! visudo -cqf "$file" >/dev/null 2>&1; then
+		rm -f "$file"
+		fail "The sudo rule for $user came out broken, so it was left out." \
+			'Tell the SmartifyOS developers, with the name of that user.'
+	fi
+	put_file /etc/sudoers.d/smartify-os 0440 <"$file"
+	rm -f "$file"
+}
+
+# UDisks2 only lets a user mount in an active local session unless told otherwise, and the
+# session a service opens may not count as one.
+system_polkit() {
+	put_file /etc/polkit-1/rules.d/50-smartify-os.rules 0644 <<EOF
+// Written by the SmartifyOS installer: SmartifyOS opens USB sticks itself, for
+// updates and anything else on them, and ejects them.
+polkit.addRule(function (action, subject) {
+  if (subject.user !== "$1") return polkit.Result.NOT_HANDLED;
+  if (action.id.indexOf("org.freedesktop.udisks2.filesystem-mount") === 0 ||
+      action.id.indexOf("org.freedesktop.udisks2.eject-media") === 0 ||
+      action.id.indexOf("org.freedesktop.udisks2.power-off-drive") === 0) {
+    return polkit.Result.YES;
+  }
+  return polkit.Result.NOT_HANDLED;
+});
+EOF
+}
+
+# The login session the service opens on tty1, the way a login screen would, which is what
+# gives SmartifyOS the screen, touch and sound, and its language from /etc/default/locale.
+system_pam() {
+	put_file /etc/pam.d/smartify-os 0644 <<'EOF'
+# Written by the SmartifyOS installer: the session SmartifyOS runs in, opened by
+# smartify-os.service on the car's screen instead of by a login screen.
+@include common-auth
+@include common-account
+session required pam_loginuid.so
+session required pam_env.so readenv=1
+session optional pam_env.so readenv=1 envfile=/etc/default/locale
+@include common-session
+EOF
+}
+
+system_labwc() {
+	local keyboard="$sysroot/etc/default/keyboard" key value
+	put_file /etc/smartify-os/labwc/rc.xml 0644 <<'EOF'
+<?xml version="1.0"?>
+<!--
+  Written by the SmartifyOS installer, and again every time it runs, so a change made here
+  does not last. labwc shows SmartifyOS, and every app it starts, full screen, and offers
+  nothing that leads away from it.
+-->
+<labwc_config>
+  <windowRules>
+    <!-- No frame around any window, and every main window full screen, which also hides
+         the title bar GTK draws itself. -->
+    <windowRule identifier="*" serverDecoration="no" />
+    <windowRule type="normal">
+      <action name="ToggleFullscreen" />
+    </windowRule>
+  </windowRules>
+  <keyboard>
+    <!-- Any keybind here replaces all of labwc's own, which switch and close windows and
+         open a terminal. This is the only one, and restarts SmartifyOS. -->
+    <keybind key="C-A-BackSpace">
+      <action name="Exit" />
+    </keybind>
+  </keyboard>
+  <mouse>
+    <!-- The same for the mouse: clicking a window focuses it, nothing else, so there is
+         no menu on the background either. -->
+    <context name="Client">
+      <mousebind button="Left" action="Press"><action name="Focus" /><action name="Raise" /></mousebind>
+      <mousebind button="Middle" action="Press"><action name="Focus" /><action name="Raise" /></mousebind>
+      <mousebind button="Right" action="Press"><action name="Focus" /><action name="Raise" /></mousebind>
+    </context>
+  </mouse>
+</labwc_config>
+EOF
+	{
+		printf '%s\n' \
+			'# Written by the SmartifyOS installer: no cursor on the screen, and the keyboard' \
+			'# layout chosen when Linux was installed, from /etc/default/keyboard.' \
+			"XCURSOR_THEME=$hidden_cursor" \
+			'XCURSOR_SIZE=24'
+		if [ -f "$keyboard" ]; then
+			for key in LAYOUT MODEL VARIANT OPTIONS; do
+				value=$(conf_get "$keyboard" "XKB$key" | tr -d '"')
+				if [ -n "$value" ]; then printf 'XKB_DEFAULT_%s=%s\n' "$key" "$value"; fi
+			done
+		fi
+	} | put_file /etc/smartify-os/labwc/environment 0644
+}
+
+# u32 <number>...: each as the four bytes an Xcursor file stores it in, lowest first.
+u32() {
+	local n
+	for n in "$@"; do
+		# shellcheck disable=SC2059
+		printf "$(printf '\\%03o\\%03o\\%03o\\%03o' $((n & 255)) $((n >> 8 & 255)) $((n >> 16 & 255)) $((n >> 24 & 255)))"
+	done
+}
+
+# A cursor of one transparent pixel, as an Xcursor file (see the Xcursor(3) man page).
+blank_cursor() {
+	local image=4294770690 # 0xfffd0002, the type of an image
+	printf 'Xcur'
+	u32 16 65536 1       # the header's size, the format's version, one image
+	u32 "$image" 24 28   # its type, its nominal size, and where it starts
+	u32 36 "$image" 24 1 # its own header's size, type, nominal size and version
+	u32 1 1 0 0 0        # one by one pixel, pointing at its corner, never animated
+	u32 0                # the pixel, fully transparent
+}
+
+# Every name a program asks a cursor theme for. One missing would be drawn from another
+# theme, which is exactly the cursor this is here to hide.
+cursor_names='default left_ptr arrow top_left_arrow pointer hand hand1 hand2 pointing_hand
+text xterm ibeam vertical-text crosshair cross cell wait watch progress left_ptr_watch help
+question_arrow whats_this context-menu move fleur all-scroll grab grabbing openhand
+closedhand dnd-move dnd-copy dnd-link dnd-none dnd-ask copy alias no-drop not-allowed
+crossed_circle col-resize row-resize ew-resize ns-resize nesw-resize nwse-resize n-resize
+s-resize e-resize w-resize ne-resize nw-resize se-resize sw-resize sb_h_double_arrow
+sb_v_double_arrow h_double_arrow v_double_arrow size_hor size_ver size_bdiag size_fdiag
+top_side bottom_side left_side right_side top_left_corner top_right_corner
+bottom_left_corner bottom_right_corner zoom-in zoom-out X_cursor pirate'
+
+system_cursor() {
+	local dir="/usr/share/icons/$hidden_cursor" name compile='' candidate
+	blank_cursor | put_file "$dir/cursors/default" 0644
+	for name in $cursor_names; do
+		if [ "$name" != default ]; then ln -sfn default "$sysroot$dir/cursors/$name"; fi
+	done
+	put_file "$dir/index.theme" 0644 <<'EOF'
+[Icon Theme]
+Name=SmartifyOS, no cursor
+Comment=Written by the SmartifyOS installer, so the car's screen shows no cursor
+EOF
+
+	# labwc draws the cursor everywhere but over GTK's windows, SmartifyOS's included, for
+	# which GTK draws it from the theme GSettings names.
+	put_file /usr/share/glib-2.0/schemas/90_smartify-os.gschema.override 0644 <<EOF
+# Written by the SmartifyOS installer: no cursor over SmartifyOS either.
+[org.gnome.desktop.interface]
+cursor-theme='$hidden_cursor'
+EOF
+	# Debian keeps the compiler inside GLib's own package when libglib2.0-bin is missing.
+	compile=$(command -v glib-compile-schemas 2>/dev/null || true)
+	if [ -z "$compile" ]; then
+		for candidate in "$sysroot"/usr/lib/*/glib-2.0/glib-compile-schemas; do
+			if [ -x "$candidate" ]; then compile=$candidate; fi
+		done
+	fi
+	if [ -z "$compile" ] || ! "$compile" "$sysroot/usr/share/glib-2.0/schemas" >/dev/null 2>&1; then
+		warn 'GTK could not be told to hide the cursor, so it shows over SmartifyOS when a mouse is plugged in.'
+	fi
+}
+
+system_service() {
+	local user=$1 dir=$2 link target out
+	put_file "/etc/systemd/system/$service_name" 0644 <<EOF
+# Written by the SmartifyOS installer, and again every time it runs.
+#
+# Shows SmartifyOS on the car's screen as soon as the car starts, instead of a login
+# screen, and starts it again whenever it quits: after an update it quits on purpose, so
+# this starts the new version. It runs in labwc, which keeps every window full screen and
+# ends when SmartifyOS does.
+#
+# $dir/app/smartify-os links to the car's app, and every update makes it again, so this
+# never has to change.
+[Unit]
+Description=SmartifyOS
+After=systemd-user-sessions.service plymouth-quit-wait.service getty@tty1.service
+After=dbus.socket systemd-logind.service
+Wants=dbus.socket systemd-logind.service
+Conflicts=getty@tty1.service
+# Never give up: a car with a black screen is worse than one that keeps trying.
+StartLimitIntervalSec=0
+
+[Service]
+User=$user
+# A login session on tty1, see /etc/pam.d/smartify-os.
+PAMName=smartify-os
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+Environment=XDG_SESSION_TYPE=wayland
+WorkingDirectory=~
+ExecStart=/usr/bin/labwc --config-dir /etc/smartify-os/labwc --session $dir/app/smartify-os
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=graphical.target
+Alias=display-manager.service
+EOF
+
+	# A desktop's login screen would take the screen, and the name, from SmartifyOS.
+	link="$sysroot/etc/systemd/system/display-manager.service"
+	if [ -L "$link" ]; then
+		target=$(basename "$(readlink "$link")")
+		if [ "$target" != "$service_name" ]; then
+			warn "The desktop's login screen (${target%.service}) no longer starts, so the car starts straight into SmartifyOS."
+			unit_ctl disable "$target" >/dev/null 2>&1 || true
+			rm -f "$link"
+		fi
+	fi
+
+	if [ -z "$sysroot" ] && [ -d /run/systemd/system ]; then systemctl daemon-reload; fi
+	out=$(unit_ctl enable "$service_name" 2>&1) ||
+		fail 'SmartifyOS could not be set to start with the car.' "$(printf '%s\n' "$out" | tail -n 1)"
+	if [ "$(unit_ctl get-default 2>/dev/null || true)" != graphical.target ]; then
+		out=$(unit_ctl set-default graphical.target 2>&1) ||
+			fail 'The car could not be set to start its screen.' "$(printf '%s\n' "$out" | tail -n 1)"
+	fi
+}
+
+system_boot() {
+	if [ -f "$sysroot/boot/firmware/cmdline.txt" ]; then
+		boot_raspberry_pi
+	elif [ -f "$sysroot/etc/default/grub" ]; then
+		boot_grub
+	else
+		info 'This car starts without GRUB or a Raspberry Pi bootloader, so its start stays as it is.'
+	fi
+}
+
+boot_grub() {
+	put_file /etc/default/grub.d/smartify-os.cfg 0644 <<EOF
+# Written by the SmartifyOS installer: the car starts straight into SmartifyOS, without
+# the boot menu or any messages on its screen. Hold Shift, or press Esc, while it starts
+# to get the menu anyway.
+GRUB_TIMEOUT=0
+GRUB_TIMEOUT_STYLE=hidden
+GRUB_GFXPAYLOAD_LINUX=keep
+GRUB_CMDLINE_LINUX_DEFAULT="\$GRUB_CMDLINE_LINUX_DEFAULT $quiet_boot_options"
+EOF
+	if ! command -v update-grub >/dev/null 2>&1; then
+		warn 'update-grub is missing, so the boot menu still shows until GRUB is updated.'
+	elif ! update-grub >&2; then
+		warn 'GRUB could not be updated, so the boot menu still shows.'
+	fi
+}
+
+boot_raspberry_pi() {
+	local cmdline=/boot/firmware/cmdline.txt config=/boot/firmware/config.txt line option
+	# One line, which the firmware hands to the kernel.
+	line=$(head -n 1 "$sysroot$cmdline")
+	for option in $quiet_boot_options logo.nologo; do
+		case " $line " in *" $option "*) ;; *) line="$line $option" ;; esac
+	done
+	printf '%s\n' "$line" | put_file "$cmdline"
+
+	if [ -f "$sysroot$config" ]; then
+		{
+			strip_block <"$sysroot$config"
+			printf '%s\n' "$block_start" '[all]' '# No rainbow square while the car starts.' 'disable_splash=1' "$block_end"
+		} | put_file "$config"
+	fi
+}
+
+cmd_system() {
+	if [ $# -gt 0 ]; then fail "linux.sh system does not take $1."; fi
+	local conf="$sysroot/etc/smartify-os/car.conf" user dir
+	[ -f "$conf" ] || fail 'This is not a car yet: /etc/smartify-os/car.conf is missing.' \
+		'Set it up with install.sh, from a USB stick made with smartify-os export installer.'
+	user=$(conf_get "$conf" USER)
+	dir=$(conf_get "$conf" DIR)
+	# Both go into files where anything else could break them.
+	grep -Eq '^[A-Za-z_][A-Za-z0-9._-]*$' <<<"$user" ||
+		fail "/etc/smartify-os/car.conf names no user SmartifyOS can run as (\"$user\")." 'Run install.sh again.'
+	grep -Eq '^/[A-Za-z0-9._/-]+$' <<<"$dir" ||
+		fail "/etc/smartify-os/car.conf names no folder SmartifyOS can be in (\"$dir\")." 'Run install.sh again.'
+
+	if [ -z "$sysroot" ] && [ "$(id -u)" -ne 0 ]; then
+		need_root
+		if [ "$sudo_can_ask" = 1 ]; then exec sudo bash "${BASH_SOURCE[0]}" system; fi
+		exec sudo -n bash "${BASH_SOURCE[0]}" system
+	fi
+	if ! command -v visudo >/dev/null 2>&1 || [ ! -x "$sysroot/usr/bin/labwc" ]; then
+		fail 'What SmartifyOS needs is not installed yet, so the car cannot be set up to start it.' \
+			'Install it first, with linux.sh packages and the run set.'
+	fi
+
+	step 'Letting SmartifyOS install updates without a password'
+	system_sudo "$user"
+	step 'Letting SmartifyOS open USB sticks'
+	system_polkit "$user"
+	step 'Starting SmartifyOS with the car, full screen and without a cursor'
+	system_pam
+	system_labwc
+	system_cursor
+	system_service "$user" "$dir"
+	step 'Keeping the screen quiet while the car starts'
+	system_boot
+}
+
 # -- Entry --------------------------------------------------------------------------------
 
 usage() {
-	sed -n '3,23p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+	sed -n '3,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
 }
 
 main() {
@@ -676,6 +1048,7 @@ main() {
 	check) cmd_check "$@" ;;
 	flutter) cmd_flutter "$@" ;;
 	build) cmd_build "$@" ;;
+	system) cmd_system "$@" ;;
 	-h | --help | help) usage ;;
 	*)
 		usage

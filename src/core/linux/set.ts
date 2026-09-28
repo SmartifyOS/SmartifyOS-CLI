@@ -69,9 +69,46 @@ export function flutterToolchainNeeds(): AptNeed[] {
 	}));
 }
 
+/** Who asked for what every car runs, whatever its app is. */
+export const systemRequester: Requester = { name: 'smartify-os-system', title: 'SmartifyOS' };
+
+/**
+ * What every car runs besides its app, set up by `linux.sh system` (see LINUX_SYSTEM.md in
+ * the SmartifyOS repository for why each):
+ *
+ * - labwc shows SmartifyOS full screen, and every app it starts.
+ * - libpam-systemd and dbus-user-session give it a login session without a login screen,
+ *   which is what lets it use the screen, touch and sound, and have a session bus.
+ * - pipewire-audio plays sound, Bluetooth audio included.
+ * - sudo and polkitd let it install updates and open USB sticks without a password.
+ * - gsettings-desktop-schemas is where GTK reads which cursor to draw, which is none.
+ *
+ * They are in the run set rather than installed once by install.sh, so every update keeps
+ * them, and one added here reaches every car with its next update.
+ */
+export const carSystem: readonly string[] = [
+	'dbus-user-session',
+	'gsettings-desktop-schemas',
+	'labwc',
+	'libpam-systemd',
+	'pipewire-audio',
+	'polkitd',
+	'sudo',
+];
+
+/** What every car runs, as needs, to go in front of the run list. */
+export function carSystemNeeds(): AptNeed[] {
+	return carSystem.map((name) => ({
+		package: name,
+		arch: null,
+		requesters: [systemRequester],
+	}));
+}
+
 /**
  * Adds needs to a list, merging requesters of a package asked for twice. Used to put
- * Flutter's toolchain and the libraries a build links against next to what packages listed.
+ * Flutter's toolchain, what every car runs and the libraries a build links against next
+ * to what packages listed.
  */
 export function addNeeds(list: AptNeed[], extra: AptNeed[]): AptNeed[] {
 	const merged = new Map(

@@ -7,6 +7,7 @@ import { type LinuxArch, officialLinux } from '../linux/distro.ts';
 import { scripts } from '../linux/scripts.ts';
 import {
 	addNeeds,
+	carSystemNeeds,
 	flutterToolchainNeeds,
 	type PackageSet,
 	renderSet,
@@ -79,7 +80,7 @@ export function exportSets(input: Pick<ExportInput, 'buildOn' | 'needs' | 'built
 		{
 			name: 'smartify-os-run',
 			description: 'SmartifyOS',
-			apt: addNeeds(input.needs.run, input.built?.libraries ?? []),
+			apt: addNeeds(addNeeds(carSystemNeeds(), input.needs.run), input.built?.libraries ?? []),
 			udev: input.needs.udev,
 			groups: input.needs.groups,
 			flutterToolchain: false,
@@ -154,13 +155,20 @@ export function renderReadme(input: ExportInput): string {
 					'SmartifyOS installer',
 					'',
 					`1. Install ${officialLinux.name} on the car (${officialLinux.piName} on a Raspberry Pi),`,
-					'   and log in as the user SmartifyOS should run as.',
-					'2. Plug this USB stick in, and open a terminal.',
-					'3. Run this, with the folder the stick is in (often /media/<you>/<stick>):',
+					'   and log in on it as the user SmartifyOS should run as.',
+					'2. Plug this USB stick in. With no desktop on the car, nothing opens it by itself,',
+					'   so open it with this (lsblk lists the drives, if the stick is not sda1):',
 					'',
-					`     bash /media/<you>/<stick>/${exportFolderName}/install.sh`,
+					'     sudo mount /dev/sda1 /mnt',
 					'',
-					'It asks for your password once. The car needs the internet while it installs.',
+					'   Debian installed with a root password has no sudo. Type su -c "mount /dev/sda1 /mnt"',
+					'   there instead, and the root password.',
+					'3. Run this:',
+					'',
+					`     bash /mnt/${exportFolderName}/install.sh`,
+					'',
+					'It asks for your password once. The car needs the internet while it installs, and',
+					'restarts straight into SmartifyOS when it is done.',
 					...(input.buildOn === 'car'
 						? ['SmartifyOS is built on the car, which takes a while the first time.']
 						: []),

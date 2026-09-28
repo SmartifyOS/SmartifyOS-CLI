@@ -46,7 +46,11 @@ exit 0
 	'apt-get': `#!/usr/bin/env bash
 echo "apt-get $*" >>"$FAKE/log"
 case "$1" in
-update | autoremove) exit 0 ;;
+update)
+	[ -n "\${FAKE_OFFLINE:-}" ] && echo "W: Failed to fetch http://deb.debian.org/debian/dists/trixie/InRelease  Temporary failure resolving 'deb.debian.org'"
+	exit 0
+	;;
+autoremove) exit 0 ;;
 install) ;;
 *) exit 1 ;;
 esac
@@ -87,6 +91,21 @@ echo "usermod $*" >>"$FAKE/log"
 `,
 	clang: `#!/bin/sh
 echo 'Selected GCC installation: /usr/lib/gcc/x86_64-linux-gnu/14' >&2
+`,
+	systemctl: `#!/bin/sh
+echo "systemctl $*" >>"$FAKE/log"
+case "$*" in *get-default*) echo multi-user.target ;; esac
+exit 0
+`,
+	visudo: `#!/bin/sh
+echo "visudo $*" >>"$FAKE/log"
+exit "\${FAKE_VISUDO:-0}"
+`,
+	'update-grub': `#!/bin/sh
+echo "update-grub" >>"$FAKE/log"
+`,
+	'glib-compile-schemas': `#!/bin/sh
+echo "glib-compile-schemas $*" >>"$FAKE/log"
 `,
 };
 
@@ -262,6 +281,32 @@ describe('linux.sh', () => {
 		expect(await depends()).toBe('clang, libstdc++-14-dev');
 	});
 
+	test('says it needs the internet when apt cannot reach it, which apt itself only warns about', async () => {
+		await system({ known: ['bluez'] });
+		await writeSet({ apt: ['bluez\t*\tSmartifyOS'] });
+		const result = Bun.spawnSync(['bash', script, 'packages', set], {
+			env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE: fake, FAKE_OFFLINE: '1' },
+		});
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr.toString()).toContain('  x The package lists could not be updated.\n');
+		expect(result.stderr.toString()).toContain('This needs the internet.');
+		expect(await read('log')).not.toContain('apt-get install');
+	});
+
+	test('takes a set that needs nothing new without the internet', async () => {
+		// Installed by an earlier set, which asked for more than this one does.
+		await system({ installed: ['bluez', 'smartify-os-run'], known: ['bluez'] });
+		await writeSet({ apt: ['bluez\t*\tSmartifyOS'] });
+		const result = Bun.spawnSync(['bash', script, 'packages', set], {
+			env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE: fake, FAKE_OFFLINE: '1' },
+		});
+		expect({ code: result.exitCode, stderr: result.stderr.toString() }).toMatchObject({ code: 0 });
+		const log = await read('log');
+		expect(log).not.toContain('apt-get update');
+		expect(log).toContain('apt-get install -y -q');
+		expect(await depends()).toBe('bluez');
+	});
+
 	test('refuses an architecture SmartifyOS does not run on', async () => {
 		await writeSet({ apt: ['bluez\t*\tSmartifyOS'] });
 		const result = Bun.spawnSync(['bash', script, 'packages', set], {
@@ -269,5 +314,175 @@ describe('linux.sh', () => {
 		});
 		expect(result.exitCode).toBe(1);
 		expect(result.stderr.toString()).toContain('this machine is armhf');
+	});
+});
+
+/** The machine `linux.sh system` sets up, standing in for /. */
+const sysroot = join(root, 'sysroot');
+
+interface Car {
+	user?: string;
+	/** Files that are there before, by their path below /. */
+	files?: Record<string, string>;
+}
+
+async function car({ user = 'pi', files = {} }: Car = {}) {
+	await rm(sysroot, { recursive: true, force: true });
+	await Bun.write(
+		join(sysroot, 'etc/smartify-os/car.conf'),
+		`USER=${user}\nDIR=/opt/smartify-os\n`,
+	);
+	await Bun.write(join(sysroot, 'usr/bin/labwc'), '#!/bin/sh\n');
+	await chmod(join(sysroot, 'usr/bin/labwc'), 0o755);
+	for (const [path, text] of Object.entries(files)) await Bun.write(join(sysroot, path), text);
+}
+
+function setUpSystem(env: Record<string, string> = {}) {
+	const result = Bun.spawnSync(['bash', script, 'system'], {
+		env: {
+			...process.env,
+			PATH: `${bin}:${process.env.PATH}`,
+			FAKE: fake,
+			NO_COLOR: '1',
+			SMARTIFY_OS_SYSROOT: sysroot,
+			...env,
+		},
+	});
+	return { code: result.exitCode, stderr: result.stderr.toString() };
+}
+
+async function file(path: string): Promise<string> {
+	const found = Bun.file(join(sysroot, path));
+	return (await found.exists()) ? await found.text() : '';
+}
+
+describe('linux.sh system', () => {
+	test('starts SmartifyOS with the car, as the user in car.conf, and again whenever it quits', async () => {
+		await car();
+		const { code, stderr } = setUpSystem();
+		expect({ code, stderr }).toMatchObject({ code: 0 });
+
+		const service = await file('etc/systemd/system/smartify-os.service');
+		expect(service).toContain('\nUser=pi\n');
+		expect(service).toContain('\nRestart=always\n');
+		expect(service).toContain('--session /opt/smartify-os/app/smartify-os\n');
+		expect(service).toContain('\nPAMName=smartify-os\n');
+		expect(await file('etc/pam.d/smartify-os')).toContain('@include common-session');
+		expect(await file('etc/smartify-os/labwc/rc.xml')).toContain('ToggleFullscreen');
+
+		const log = await read('log');
+		expect(log).toContain(`systemctl --root=${sysroot} enable smartify-os.service`);
+		expect(log).toContain(`systemctl --root=${sysroot} set-default graphical.target`);
+	});
+
+	test('lets the user use sudo and open USB sticks without a password', async () => {
+		await car();
+		expect(setUpSystem().code).toBe(0);
+		expect(await file('etc/sudoers.d/smartify-os')).toContain('\npi ALL=(ALL:ALL) NOPASSWD: ALL\n');
+		const mode = Bun.spawnSync(['ls', '-l', join(sysroot, 'etc/sudoers.d/smartify-os')]);
+		expect(mode.stdout.toString()).toStartWith('-r--r-----');
+		const rule = await file('etc/polkit-1/rules.d/50-smartify-os.rules');
+		expect(rule).toContain('if (subject.user !== "pi")');
+		expect(rule).toContain('org.freedesktop.udisks2.filesystem-mount');
+	});
+
+	test('leaves the sudo rule out when visudo finds it broken, since that would break sudo', async () => {
+		await car();
+		const { code, stderr } = setUpSystem({ FAKE_VISUDO: '1' });
+		expect(code).toBe(1);
+		expect(stderr).toContain('The sudo rule for pi came out broken');
+		expect(await file('etc/sudoers.d/smartify-os')).toBe('');
+	});
+
+	test('hides the cursor, for labwc and for GTK', async () => {
+		await car();
+		expect(setUpSystem().code).toBe(0);
+		const theme = join(sysroot, 'usr/share/icons/smartify-os-hidden/cursors');
+		const cursor = new Uint8Array(await Bun.file(join(theme, 'default')).arrayBuffer());
+		// The header, one table entry, one image header and one pixel.
+		expect(cursor.length).toBe(16 + 12 + 36 + 4);
+		expect(new TextDecoder().decode(cursor.slice(0, 4))).toBe('Xcur');
+		expect(cursor.slice(-4)).toEqual(new Uint8Array([0, 0, 0, 0]));
+		expect(
+			Bun.spawnSync(['readlink', join(theme, 'pointer')])
+				.stdout.toString()
+				.trim(),
+		).toBe('default');
+		expect(await file('etc/smartify-os/labwc/environment')).toContain(
+			'XCURSOR_THEME=smartify-os-hidden',
+		);
+		expect(await file('usr/share/glib-2.0/schemas/90_smartify-os.gschema.override')).toContain(
+			"cursor-theme='smartify-os-hidden'",
+		);
+		expect(await read('log')).toContain('glib-compile-schemas');
+	});
+
+	test('keeps the keyboard layout chosen when Linux was installed', async () => {
+		await car({
+			files: { 'etc/default/keyboard': 'XKBMODEL="pc105"\nXKBLAYOUT="de"\nXKBVARIANT=""\n' },
+		});
+		expect(setUpSystem().code).toBe(0);
+		const environment = await file('etc/smartify-os/labwc/environment');
+		expect(environment).toContain('XKB_DEFAULT_LAYOUT=de\n');
+		expect(environment).toContain('XKB_DEFAULT_MODEL=pc105\n');
+		expect(environment).not.toContain('XKB_DEFAULT_VARIANT');
+	});
+
+	test('turns off the login screen of a desktop, which would take the screen', async () => {
+		await car({ files: { 'lib/systemd/system/lightdm.service': '[Unit]\n' } });
+		await mkdir(join(sysroot, 'etc/systemd/system'), { recursive: true });
+		Bun.spawnSync([
+			'ln',
+			'-s',
+			'/lib/systemd/system/lightdm.service',
+			join(sysroot, 'etc/systemd/system/display-manager.service'),
+		]);
+		const { code, stderr } = setUpSystem();
+		expect({ code, stderr }).toMatchObject({ code: 0 });
+		expect(stderr).toContain("The desktop's login screen (lightdm) no longer starts");
+		expect(await read('log')).toContain('disable lightdm.service');
+	});
+
+	test('quiets GRUB with a file of its own, and updates it', async () => {
+		await car({ files: { 'etc/default/grub': 'GRUB_CMDLINE_LINUX_DEFAULT="quiet"\n' } });
+		expect(setUpSystem().code).toBe(0);
+		const grub = await file('etc/default/grub.d/smartify-os.cfg');
+		expect(grub).toContain('GRUB_TIMEOUT=0\n');
+		expect(grub).toContain('GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT quiet');
+		expect(await file('etc/default/grub')).toBe('GRUB_CMDLINE_LINUX_DEFAULT="quiet"\n');
+		expect(await read('log')).toContain('update-grub');
+	});
+
+	test("quiets a Raspberry Pi's start, the same however often it runs", async () => {
+		const cmdline = 'console=serial0,115200 console=tty1 root=PARTUUID=1234-02 rootwait quiet\n';
+		const config = 'dtparam=audio=on\n\n[all]\n';
+		await car({
+			files: { 'boot/firmware/cmdline.txt': cmdline, 'boot/firmware/config.txt': config },
+		});
+		expect(setUpSystem().code).toBe(0);
+		expect(setUpSystem().code).toBe(0);
+		expect(await file('boot/firmware/cmdline.txt')).toBe(
+			'console=serial0,115200 console=tty1 root=PARTUUID=1234-02 rootwait quiet loglevel=3 vt.global_cursor_default=0 logo.nologo\n',
+		);
+		const written = await file('boot/firmware/config.txt');
+		expect(written).toStartWith(config);
+		expect(written.match(/disable_splash=1/g)).toHaveLength(1);
+		expect(await read('log')).not.toContain('update-grub');
+	});
+
+	test('refuses a user name that would break the files it goes into', async () => {
+		await car({ user: 'pi"; rm -rf /' });
+		const { code, stderr } = setUpSystem();
+		expect(code).toBe(1);
+		expect(stderr).toContain('names no user SmartifyOS can run as');
+		expect(await file('etc/sudoers.d/smartify-os')).toBe('');
+	});
+
+	test('refuses a machine install.sh has not set up', async () => {
+		await car();
+		await rm(join(sysroot, 'etc/smartify-os/car.conf'));
+		const { code, stderr } = setUpSystem();
+		expect(code).toBe(1);
+		expect(stderr).toContain('This is not a car yet');
 	});
 });

@@ -65,7 +65,7 @@ smartify-os export installer           # set up a new car
 smartify-os export update              # update a car that runs SmartifyOS already
 ```
 
-Both ask which USB stick to use (or take `--to <folder>`) and put a `smartify-os` folder on it. For a new car, install Debian 13 on it (Raspberry Pi OS Lite on a Raspberry Pi), plug the stick in and run `bash /media/<you>/<stick>/smartify-os/install.sh` there once. It asks for the password once and needs the internet. `README.txt` on the stick says the same. For an update, plug the stick into the car while SmartifyOS runs.
+Both ask which USB stick to use (or take `--to <folder>`) and put a `smartify-os` folder on it. For a new car, install Debian 13 on it (Raspberry Pi OS Lite on a Raspberry Pi), plug the stick in, open it with `sudo mount /dev/sda1 /mnt` (there is no desktop to do that) and run `bash /mnt/smartify-os/install.sh` once. It asks for the password once, needs the internet, and leaves a car that starts straight into SmartifyOS, full screen, with no desktop or cursor. `README.txt` on the stick says the same. For an update, plug the stick into the car while SmartifyOS runs.
 
 SmartifyOS is built one of two ways, picked with `--build-on`:
 

@@ -59,6 +59,15 @@ describe('exportSets', () => {
 		expect(sets.map((set) => set.name)).toEqual(['smartify-os-run']);
 		expect(sets[0]?.apt.map((need) => need.package)).toContain('libgtk-3-0t64');
 	});
+
+	test('every car gets what linux.sh system sets up, on top of what its packages list', async () => {
+		const run = exportSets(await input('computer'))[0]?.apt ?? [];
+		const names = run.map((need) => need.package);
+		expect(names).toContain('labwc');
+		expect(names).toContain('sudo');
+		expect(names).toContain('bluez');
+		expect(run.find((need) => need.package === 'labwc')?.requesters[0]?.title).toBe('SmartifyOS');
+	});
 });
 
 describe('renderConf', () => {
