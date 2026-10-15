@@ -486,3 +486,90 @@ describe('linux.sh system', () => {
 		expect(stderr).toContain('This is not a car yet');
 	});
 });
+
+/** The folder SmartifyOS lives in on the car, for what runs before it starts. */
+const carDir = join(root, 'car-dir');
+
+/** Sets up carDir with the given versions, each a folder that says which it is. */
+async function versions(folders: Record<string, string>) {
+	await rm(carDir, { recursive: true, force: true });
+	await mkdir(carDir, { recursive: true });
+	for (const [folder, which] of Object.entries(folders))
+		await Bun.write(join(carDir, folder, 'which'), which);
+}
+
+/** Runs what the service runs before SmartifyOS starts. */
+function beforeStart() {
+	const result = Bun.spawnSync(['sh', join(sysroot, 'usr/lib/smartify-os/before-start'), carDir]);
+	return { code: result.exitCode, stderr: result.stderr.toString() };
+}
+
+/** Which version is in each folder of carDir. */
+async function onDisk(): Promise<Record<string, string>> {
+	const found: Record<string, string> = {};
+	for (const folder of ['app', 'app.new', 'app.old', 'app.failed']) {
+		const which = Bun.file(join(carDir, folder, 'which'));
+		if (await which.exists()) found[folder] = await which.text();
+	}
+	return found;
+}
+
+describe('before SmartifyOS starts', () => {
+	beforeEach(async () => {
+		await car();
+		expect(setUpSystem().code).toBe(0);
+	});
+
+	test('the service runs it, and starts SmartifyOS even if it fails', async () => {
+		expect(await file('etc/systemd/system/smartify-os.service')).toContain(
+			'\nExecStartPre=-/usr/lib/smartify-os/before-start /opt/smartify-os\n',
+		);
+		const mode = Bun.spawnSync(['ls', '-l', join(sysroot, 'usr/lib/smartify-os/before-start')]);
+		expect(mode.stdout.toString()).toStartWith('-rwxr-xr-x');
+	});
+
+	test('leaves a car that was not updating alone', async () => {
+		await versions({ app: 'a' });
+		expect(beforeStart().code).toBe(0);
+		expect(await onDisk()).toEqual({ app: 'a' });
+	});
+
+	test('finishes an update the power cut between its two renames', async () => {
+		await versions({ 'app.new': 'b', 'app.old': 'a' });
+		const { code, stderr } = beforeStart();
+		expect(code).toBe(0);
+		expect(stderr).toContain('finishing it');
+		expect(await onDisk()).toEqual({ app: 'b', 'app.old': 'a' });
+	});
+
+	test('goes back to the version before when the new one was lost', async () => {
+		await versions({ 'app.old': 'a' });
+		expect(beforeStart().stderr).toContain('going back to the version before it');
+		expect(await onDisk()).toEqual({ app: 'a' });
+	});
+
+	test('gives a new version three starts to last a minute, then goes back', async () => {
+		await versions({ app: 'b', 'app.old': 'a', 'app.failed': 'older' });
+		for (let start = 1; start <= 3; start++) {
+			expect(beforeStart().code).toBe(0);
+			expect(await onDisk()).toEqual({ app: 'b', 'app.old': 'a', 'app.failed': 'older' });
+		}
+		expect(await Bun.file(join(carDir, 'app.old/.smartify-os-starts')).text()).toBe('3\n');
+
+		const { code, stderr } = beforeStart();
+		expect(code).toBe(0);
+		expect(stderr).toContain('did not last a minute in 3 starts');
+		expect(await onDisk()).toEqual({ app: 'a', 'app.failed': 'b' });
+		expect(await Bun.file(join(carDir, 'app/.smartify-os-starts')).exists()).toBe(false);
+	});
+
+	test('counts afresh for every update, since SmartifyOS deletes app.old once one lasts', async () => {
+		await versions({ app: 'b', 'app.old': 'a' });
+		beforeStart();
+		beforeStart();
+		// b lasted a minute, then c came, with b as app.old.
+		await versions({ app: 'c', 'app.old': 'b' });
+		for (let start = 1; start <= 3; start++) beforeStart();
+		expect(await onDisk()).toEqual({ app: 'c', 'app.old': 'b' });
+	});
+});

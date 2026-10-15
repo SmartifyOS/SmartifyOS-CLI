@@ -112,6 +112,7 @@ describe('writeExport', () => {
 		expect(result.folder).toBe(join(stick, 'smartify-os'));
 		expect(result.files).toEqual([
 			'README.txt',
+			'SHA256SUMS',
 			'export.conf',
 			'install.sh',
 			'linux.sh',
@@ -142,6 +143,27 @@ describe('writeExport', () => {
 			app: 'car',
 			created: '2026-09-27T12:00:00.000Z',
 		});
+	});
+
+	test('lists every file an install reads in SHA256SUMS, the way sha256sum checks it', async () => {
+		const stick = join(dir, 'stick-sums');
+		await mkdir(stick);
+		const result = await writeExport(await input('car'), stick);
+		const sums = await Bun.file(join(result.folder, 'SHA256SUMS')).text();
+		const listed = sums
+			.trimEnd()
+			.split('\n')
+			.map((line) => line.slice(66));
+		expect(listed).toEqual(result.files.filter((f) => f !== 'README.txt' && f !== 'SHA256SUMS'));
+		expect(sums).toMatch(/^[0-9a-f]{64} {2}export\.conf$/m);
+
+		const check = () =>
+			Bun.spawnSync(['sha256sum', '--check', '--quiet', '--strict', 'SHA256SUMS'], {
+				cwd: result.folder,
+			}).exitCode;
+		expect(check()).toBe(0);
+		await Bun.write(join(result.folder, 'linux.sh'), 'damaged\n');
+		expect(check()).not.toBe(0);
 	});
 
 	test('an update is the same without install.sh, and replaces what was there', async () => {

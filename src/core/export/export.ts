@@ -24,6 +24,8 @@ import { packBundle, packSource } from './pack.ts';
  * the car can read an update exactly as install.sh reads an installer:
  *
  *   export.conf            what this is, see {@link renderConf}
+ *   SHA256SUMS             what every file an install reads should hash to, see
+ *                          {@link renderChecksums}
  *   linux.sh               the one step every install, build and update runs
  *   install.sh             only in an installer
  *   README.txt             what to do with it, for a person
@@ -233,6 +235,7 @@ export async function writeExport(
 		if (input.kind === 'installer') await write('install.sh', scripts['install.sh'], true);
 		await write('export.conf', renderConf(input));
 		await write('README.txt', renderReadme(input));
+		await write(checksumsName, await renderChecksums(staging, files));
 
 		await rm(folder, { recursive: true, force: true });
 		await rename(staging, folder);
@@ -241,6 +244,35 @@ export async function writeExport(
 		await rm(staging, { recursive: true, force: true }).catch(() => {});
 		throw error;
 	}
+}
+
+/**
+ * The file that says what every file an install reads should hash to. SmartifyOS on the
+ * car (`LinuxUpdateBackend.checksumsName`) and install.sh both look for it by this name.
+ */
+export const checksumsName = 'SHA256SUMS';
+
+/** Internal: whether an install reads this file, which the README is not. */
+function isChecked(path: string): boolean {
+	return path !== 'README.txt' && path !== checksumsName;
+}
+
+/**
+ * SHA256SUMS, in the format `sha256sum` writes and `sha256sum --check` reads: one
+ * `<hash>  <path>` per file an install reads, relative to the `smartify-os` folder.
+ *
+ * It only catches a damaged stick (a bad copy, a stick pulled out too early). Nothing is
+ * signed, since an update is one the owner exported themselves.
+ */
+export async function renderChecksums(folder: string, files: string[]): Promise<string> {
+	const lines: string[] = [];
+	for (const path of files.filter(isChecked).sort()) {
+		const hasher = new Bun.CryptoHasher('sha256');
+		// Streamed, since the build or the source can be a few hundred megabytes.
+		for await (const chunk of Bun.file(join(folder, path)).stream()) hasher.update(chunk);
+		lines.push(`${hasher.digest('hex')}  ${path}\n`);
+	}
+	return lines.join('');
 }
 
 /** What an export already on a stick is, from its export.conf. */

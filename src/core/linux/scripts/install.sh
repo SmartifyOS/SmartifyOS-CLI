@@ -465,9 +465,25 @@ fi
 
 # -- SmartifyOS ---------------------------------------------------------------------------
 
+# A stick copied badly, or pulled out too early, is caught before anything on it runs.
+# It only says the stick is whole: nothing on it is signed.
+check_stick() {
+	command -v sha256sum >/dev/null 2>&1 ||
+		fail 'sha256sum is missing, so the USB stick cannot be checked.' 'Install coreutils with apt, then run this again.'
+	# What does not match goes to stdout, which a step hands back, so it goes to the log.
+	(cd "$here" && sha256sum --check --quiet --strict SHA256SUMS) >&2 ||
+		fail 'The USB stick is damaged: some files on it are not what was exported.' \
+			'Export the installer again, and eject the stick before pulling it out.'
+}
+
 printf '== SmartifyOS installer, %s, for %s\n' "$(date)" "$user" >>"$log"
 task_out=$(mktemp)
 trap 'rm -f "$task_out"; show_cursor' EXIT
+
+# Only a stick exported before smartify-os wrote one has no SHA256SUMS.
+if [ -f "$here/SHA256SUMS" ]; then
+	task 'Checking the USB stick' 'The USB stick is whole' check_stick
+fi
 
 install -d -o "$user" -g "$group" "$home_dir"
 install -d /etc/smartify-os
@@ -490,25 +506,36 @@ unpack_build() {
 }
 
 # Swaps the new build in, and links what the service starts to the program in it.
+#
+# The same way SmartifyOS installs an update: the new version is made complete as app.new,
+# and only then do two renames swap it in, app to app.old and app.new to app. A car that
+# loses power halfway is put right by the service before it next starts SmartifyOS (see
+# system_before_start in linux.sh), and app.old goes once the new version has run a minute.
 put_in_place() {
-	local binary
+	local binary next="$home_dir/app.new"
 	binary=$(conf_get "$conf" BINARY)
-	rm -rf "$home_dir/app"
+	rm -rf "$next"
 	if [ "$build_on" = car ]; then
 		# Copied, so the build folder stays and the next build on the car is quicker.
-		cp -a "$bundle" "$home_dir/app"
+		cp -a "$bundle" "$next"
 	else
-		mv "$bundle" "$home_dir/app"
+		mv "$bundle" "$next"
 		rm -rf "$home_dir/.new"
 	fi
 	# The service starts $home_dir/app/smartify-os, whatever the car's app calls its program,
 	# so it never has to change. SmartifyOS makes the same link with every update.
 	if [ -n "$binary" ] && [ "$binary" != smartify-os ]; then
-		[ -f "$home_dir/app/$binary" ] ||
+		if [ ! -f "$next/$binary" ]; then
+			rm -rf "$next"
 			fail "The build has no program called $binary." 'Export the installer again.'
-		ln -sfn "$binary" "$home_dir/app/smartify-os"
+		fi
+		ln -sfn "$binary" "$next/smartify-os"
 	fi
-	chown -R "$user:$group" "$home_dir/app"
+	chown -R "$user:$group" "$next"
+
+	rm -rf "$home_dir/app.old"
+	if [ -d "$home_dir/app" ]; then mv "$home_dir/app" "$home_dir/app.old"; fi
+	mv "$next" "$home_dir/app"
 }
 
 if [ "$build_on" = car ]; then

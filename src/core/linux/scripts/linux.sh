@@ -694,6 +694,8 @@ sysroot=${SMARTIFY_OS_SYSROOT:-}
 
 # What SmartifyOS runs as. An update relies on it starting SmartifyOS again when it quits.
 service_name=smartify-os.service
+# What the service runs before every start, to put right an update the power cut short.
+before_start=/usr/lib/smartify-os/before-start
 # A cursor theme whose every cursor is one transparent pixel, which is how there is none.
 hidden_cursor=smartify-os-hidden
 # Keeps the kernel's messages and the blinking text cursor off the screen while the car
@@ -888,6 +890,61 @@ EOF
 	fi
 }
 
+# An update (SmartifyOS's LinuxUpdateBackend, and put_in_place in install.sh) makes the new
+# version complete as DIR/app.new, then renames DIR/app to DIR/app.old and DIR/app.new to
+# DIR/app. SmartifyOS deletes DIR/app.old once the new version has been on screen for a
+# minute. A car loses power whenever the ignition goes off, and SmartifyOS cannot repair
+# anything if it cannot start, so this runs before it does. Plain sh, and it never fails,
+# so nothing in it can keep SmartifyOS off the screen.
+system_before_start() {
+	put_file "$before_start" 0755 <<'EOF'
+#!/bin/sh
+#
+# Written by the SmartifyOS installer, and again every time it runs.
+#
+#   before-start DIR
+#
+# Run by smartify-os.service before every start of SmartifyOS: finishes an update the
+# power cut short, and goes back to the version before an update that never stays up.
+
+dir=${1:-/opt/smartify-os}
+cd "$dir" 2>/dev/null || exit 0
+# How often the new version may start without lasting a minute before it is given up.
+tries=3
+# How often it has, kept inside DIR/app.old so it goes when SmartifyOS deletes that.
+starts=app.old/.smartify-os-starts
+
+say() { echo "SmartifyOS: $*" >&2; }
+
+if [ ! -d app ]; then
+	if [ -d app.new ]; then
+		# Between the two renames, when DIR/app.new is complete.
+		say 'The power went during an update, finishing it.'
+		mv app.new app
+	elif [ -d app.old ]; then
+		# Right after the first, with DIR/app.new lost.
+		say 'The power went during an update, going back to the version before it.'
+		mv app.old app
+		rm -f app/.smartify-os-starts
+	fi
+fi
+
+if [ -d app.old ]; then
+	count=$(cat "$starts" 2>/dev/null || true)
+	case "$count" in '' | *[!0-9]*) count=0 ;; esac
+	if [ "$count" -ge "$tries" ]; then
+		say "The new version did not last a minute in $tries starts, going back to the version before it. It is kept in $dir/app.failed."
+		rm -rf app.failed
+		mv app app.failed && mv app.old app
+		rm -f app/.smartify-os-starts
+	else
+		echo $((count + 1)) >"$starts"
+	fi
+fi
+exit 0
+EOF
+}
+
 system_service() {
 	local user=$1 dir=$2 link target out
 	put_file "/etc/systemd/system/$service_name" 0644 <<EOF
@@ -899,7 +956,8 @@ system_service() {
 # ends when SmartifyOS does.
 #
 # $dir/app/smartify-os links to the car's app, and every update makes it again, so this
-# never has to change.
+# never has to change. Before every start, $before_start puts right an
+# update the power cut short.
 [Unit]
 Description=SmartifyOS
 After=systemd-user-sessions.service plymouth-quit-wait.service getty@tty1.service
@@ -924,6 +982,8 @@ UtmpIdentifier=tty1
 UtmpMode=user
 Environment=XDG_SESSION_TYPE=wayland
 WorkingDirectory=~
+# The - starts SmartifyOS even if that fails.
+ExecStartPre=-$before_start $dir
 ExecStart=/usr/bin/labwc --config-dir /etc/smartify-os/labwc --session $dir/app/smartify-os
 Restart=always
 RestartSec=1
@@ -1028,6 +1088,7 @@ cmd_system() {
 	system_pam
 	system_labwc
 	system_cursor
+	system_before_start
 	system_service "$user" "$dir"
 	step 'Keeping the screen quiet while the car starts'
 	system_boot
