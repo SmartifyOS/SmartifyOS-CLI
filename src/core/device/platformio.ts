@@ -102,7 +102,7 @@ export async function setUpPlatformio(onStep?: (step: SetUpStep) => void): Promi
 	});
 	if (!existsSync(pioPath())) {
 		throw new CliError('PlatformIO was installed, but its pio program is missing.', {
-			hint: 'Please report it at https://github.com/Mauznemo/SmartifyOS-CLI/issues',
+			hint: 'Please report it at https://github.com/SmartifyOS/SmartifyOS-CLI/issues',
 		});
 	}
 	await Bun.write(markerPath(), markerText());

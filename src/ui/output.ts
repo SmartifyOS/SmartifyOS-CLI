@@ -10,7 +10,7 @@ import { brandName, theme } from './theme.ts';
 
 /** Internal: the line under an unexpected error, for a person and a program alike. */
 const reportBug =
-	'This is a bug. Please report it at https://github.com/Mauznemo/SmartifyOS-CLI/issues';
+	'This is a bug. Please report it at https://github.com/SmartifyOS/SmartifyOS-CLI/issues';
 
 /**
  * Write a line to stdout. This is the only place allowed to touch stdout directly, apart

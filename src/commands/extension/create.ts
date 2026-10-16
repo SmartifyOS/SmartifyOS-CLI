@@ -127,7 +127,7 @@ export const extensionCreateCommand: Command = {
 				const result = await run('flutter', ['test'], { cwd: target });
 				if (result.code !== 0) {
 					throw new CliError('The new extension does not pass its own tests.', {
-						hint: `That is a bug in SmartifyOS, not something you did. Please report it at https://github.com/Mauznemo/SmartifyOS-CLI/issues with this:\n${result.stdout.slice(-2000)}`,
+						hint: `That is a bug in SmartifyOS, not something you did. Please report it at https://github.com/SmartifyOS/SmartifyOS-CLI/issues with this:\n${result.stdout.slice(-2000)}`,
 					});
 				}
 			},

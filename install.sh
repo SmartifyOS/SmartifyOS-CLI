@@ -16,7 +16,7 @@
 
 set -eu
 
-REPO="Mauznemo/SmartifyOS-CLI"
+REPO="SmartifyOS/SmartifyOS-CLI"
 BIN_NAME="smartify-os"
 INSTALL_DIR="${SMARTIFY_OS_INSTALL_DIR:-$HOME/.smartify-os/bin}"
 VERSION="${SMARTIFY_OS_VERSION:-latest}"

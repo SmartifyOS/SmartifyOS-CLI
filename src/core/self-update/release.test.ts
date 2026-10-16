@@ -60,7 +60,7 @@ describe('tagFromLocation', () => {
 
 	test('refuses a redirect somewhere else, so a proxy cannot pick the version', () => {
 		expect(
-			tagFromLocation('https://evil.example.com/Mauznemo/SmartifyOS-CLI/releases/tag/v9'),
+			tagFromLocation('https://evil.example.com/SmartifyOS/SmartifyOS-CLI/releases/tag/v9'),
 		).toBeUndefined();
 		expect(tagFromLocation('http://github.com/a/b/releases/tag/v1')).toBeUndefined();
 		expect(

@@ -31,7 +31,7 @@ function Invoke-SmartifyOsInstall {
 
 	$ErrorActionPreference = 'Stop'
 
-	$repo = 'Mauznemo/SmartifyOS-CLI'
+	$repo = 'SmartifyOS/SmartifyOS-CLI'
 	$binName = 'smartify-os'
 	$failSentinel = 'SmartifyOsInstallFailed'
 
@@ -200,7 +200,7 @@ catch {
 		Write-Host ''
 		Write-Host '  ! The SmartifyOS installer ran into an unexpected problem.' -ForegroundColor Red
 		Write-Host "    $_" -ForegroundColor DarkGray
-		Write-Host '    Please report it at https://github.com/Mauznemo/SmartifyOS-CLI/issues' -ForegroundColor DarkGray
+		Write-Host '    Please report it at https://github.com/SmartifyOS/SmartifyOS-CLI/issues' -ForegroundColor DarkGray
 		Write-Host ''
 	}
 	$global:LASTEXITCODE = 1

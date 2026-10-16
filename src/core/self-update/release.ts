@@ -13,7 +13,7 @@ import { version } from '../../utils/version.ts';
  * worked out from that tag. The API is only kept as the last of three fallbacks.
  */
 
-export const repo = 'Mauznemo/SmartifyOS-CLI';
+export const repo = 'SmartifyOS/SmartifyOS-CLI';
 
 /** Where the answers come from, so a test can answer for itself. */
 export interface ReleaseSource {

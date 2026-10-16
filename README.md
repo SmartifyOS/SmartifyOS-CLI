@@ -205,7 +205,7 @@ The installer tells you this by name if it is missing. Every other system alread
 You need [Bun](https://bun.sh). Everything else comes from `bun install`.
 
 ```bash
-git clone https://github.com/Mauznemo/SmartifyOS-CLI.git
+git clone https://github.com/SmartifyOS/SmartifyOS-CLI.git
 cd SmartifyOS-CLI
 bun install
 ```
