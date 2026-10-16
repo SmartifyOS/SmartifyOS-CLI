@@ -9,6 +9,8 @@ import { type PathEnv, stateDir } from '../paths.ts';
  * All of it is under the CLI's own folder, so deleting that folder is still a complete
  * uninstall, and none of it is ever looked for on PATH: a PlatformIO or a Python the owner
  * has for something else stays theirs, and every car's firmware is built the same way.
+ *
+ * Flutter is the one exception, see {@link flutterDir}.
  */
 
 /** The folder all of them are in. */
@@ -19,6 +21,19 @@ export function toolsDir(env?: PathEnv): string {
 /** Internal: a program's file name on this platform. */
 function program(name: string): string {
 	return process.platform === 'win32' ? `${name}.exe` : name;
+}
+
+/**
+ * The Flutter `smartify-os setup` installs. Unlike the others it is only used when there is
+ * no Flutter on PATH, since plenty of owners have one already, for their editor too.
+ */
+export function flutterDir(): string {
+	return join(toolsDir(), 'flutter');
+}
+
+/** The `flutter` program of {@link flutterDir}. */
+export function ownFlutterPath(): string {
+	return join(flutterDir(), 'bin', process.platform === 'win32' ? 'flutter.bat' : 'flutter');
 }
 
 /** uv itself, one standalone binary. */

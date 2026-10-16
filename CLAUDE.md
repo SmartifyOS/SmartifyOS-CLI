@@ -72,6 +72,10 @@ The scripts have to run under the bash 3.2 macOS ships, so `bun test` can run th
 
 The official Linux is named in one place, `src/core/linux/distro.ts`: Debian 13, and Raspberry Pi OS Lite on a Pi, which reports itself as Debian 13 (why is in `LINUX_SYSTEM.md` in the SmartifyOS repo). Building for a car on another computer happens in a kept container of that image, set up with the same `linux.sh` steps a car runs (`src/core/export/container.ts`), never with a Dockerfile of its own.
 
+## Flutter on the owner's computer
+
+`smartify-os setup` installs the newest stable Flutter into `~/.smartify-os/tools/flutter` (`src/core/setup/flutter.ts`), cloned at its tag the way `linux.sh flutter` does it on a car. Unlike PlatformIO it is only a fallback: `findFlutter` in `src/core/process.ts` takes a Flutter on PATH first, and `setup` never installs a second one next to it. `doctor` (`src/core/setup/doctor.ts`) fails only on what nothing works without (Flutter, git), everything else is a warning saying what it is for.
+
 ## The devices on a car's CAN bus
 
 `smartify-os device` makes, builds and exports the firmware of the ESP32s on a car's bus (`DEVICES.md` in the SmartifyOS repo is the owner's guide). Each is a PlatformIO project in `<app>/devices/<name>/`, built against the header core writes into `<app>/firmware/` while `smartify-os run` runs the app, and against the library and platform under `smartify_os: firmware:` in core's pubspec, which `syncIni` puts back into `platformio.ini` before every build. The version lives in the device's `smartify-os.json` and goes in as `PLATFORMIO_BUILD_FLAGS`, never in the owner's code.

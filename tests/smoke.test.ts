@@ -68,6 +68,8 @@ describe('smartify-os', () => {
 		expect(stdout).toContain('smartify-os <command> [options]');
 		expect(stdout).toContain('--version');
 		expect(stdout).toContain('self-update');
+		expect(stdout).toContain('setup');
+		expect(stdout).toContain('doctor');
 		expect(stdout).toContain('help');
 		expect(stdout).not.toContain('None yet');
 	});

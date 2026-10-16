@@ -1,5 +1,6 @@
 import { createCommand } from './create.ts';
 import { deviceCommand } from './device/index.ts';
+import { doctorCommand } from './doctor.ts';
 import { exportCommand } from './export/index.ts';
 import { extensionCommand } from './extension/index.ts';
 import { helpCommand } from './help.ts';
@@ -7,6 +8,7 @@ import { linkCommand } from './link.ts';
 import { register } from './registry.ts';
 import { runCommand } from './run.ts';
 import { selfUpdateCommand } from './self-update.ts';
+import { setupCommand } from './setup.ts';
 import { unlinkCommand } from './unlink.ts';
 import { updateCommand } from './update.ts';
 
@@ -21,6 +23,7 @@ import { updateCommand } from './update.ts';
  * about all of them at once, which is what keeps the imports going one way.
  */
 register(
+	setupCommand,
 	createCommand,
 	updateCommand,
 	extensionCommand,
@@ -29,6 +32,7 @@ register(
 	deviceCommand,
 	linkCommand,
 	unlinkCommand,
+	doctorCommand,
 	selfUpdateCommand,
 	helpCommand,
 );

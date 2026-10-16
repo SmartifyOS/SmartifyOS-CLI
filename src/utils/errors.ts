@@ -17,7 +17,7 @@ export type ExitCodeValue = (typeof ExitCode)[keyof typeof ExitCode];
  *
  * ```ts
  * throw new CliError('Flutter is not installed.', {
- *   hint: 'Run `smartify-os doctor` and it will set it up for you.',
+ *   hint: 'Run `smartify-os setup` and it will set it up for you.',
  * });
  * ```
  */

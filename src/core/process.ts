@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute } from 'node:path';
 import { CliError } from '../utils/errors.ts';
-import { pioPath, platformioEnv, uvEnv, uvPath } from './device/tools.ts';
+import { ownFlutterPath, pioPath, platformioEnv, uvEnv, uvPath } from './device/tools.ts';
 
 /**
  * Running the tools the CLI hides: `flutter`, `dart` and `git`, `tar`, `bash`, `sudo` and a
@@ -41,9 +41,8 @@ export interface RunOptions {
 }
 
 const installHints: Record<Tool, string> = {
-	flutter:
-		'Install Flutter from https://docs.flutter.dev/get-started/install and open a new terminal.',
-	dart: 'It comes with Flutter. Install Flutter from https://docs.flutter.dev/get-started/install and open a new terminal.',
+	flutter: 'Run smartify-os setup, which installs it for you.',
+	dart: 'It comes with Flutter. Run smartify-os setup, which installs it for you.',
 	git: 'Install git from https://git-scm.com/downloads and open a new terminal.',
 	tar: 'It comes with macOS, Linux and Windows 10 or newer. Install tar with your package manager.',
 	bash: 'It comes with every Linux. Install bash with your package manager.',
@@ -82,6 +81,17 @@ function toolEnv(tool: Tool): Record<string, string> {
 }
 
 /**
+ * The Flutter this computer has: the one on PATH, or else the one `smartify-os setup`
+ * installed. `undefined` when there is neither.
+ */
+export function findFlutter(): { path: string; own: boolean } | undefined {
+	const onPath = Bun.which('flutter');
+	if (onPath) return { path: onPath, own: false };
+	const own = ownFlutterPath();
+	return existsSync(own) ? { path: own, own: true } : undefined;
+}
+
+/**
  * Where a tool is on this machine.
  *
  * `dart` is looked for next to `flutter` first. A separately installed Dart SDK is often a
@@ -96,9 +106,10 @@ export function findTool(tool: Tool): string {
 		throw new CliError(`${toolNames[tool]} is not set up yet.`, { hint: installHints[tool] });
 	}
 
-	if (tool === 'dart') {
-		const flutter = Bun.which('flutter');
-		const bundled = flutter ? Bun.which('dart', { PATH: dirname(flutter) }) : null;
+	if (tool === 'flutter' || tool === 'dart') {
+		const flutter = findFlutter();
+		if (flutter && tool === 'flutter') return flutter.path;
+		const bundled = flutter ? Bun.which('dart', { PATH: dirname(flutter.path) }) : null;
 		if (bundled) return bundled;
 	}
 
@@ -129,9 +140,17 @@ export async function run(
 	args: string[],
 	options: RunOptions = {},
 ): Promise<ProcessResult> {
-	const proc = Bun.spawn([findTool(tool), ...args], {
+	return await collect(findTool(tool), args, {
+		...options,
+		env: { ...toolEnv(tool), ...options.env },
+	});
+}
+
+/** Internal: runs a program at a full path and collects what it printed. */
+async function collect(path: string, args: string[], options: RunOptions): Promise<ProcessResult> {
+	const proc = Bun.spawn([path, ...args], {
 		cwd: options.cwd,
-		env: quietEnv({ ...toolEnv(tool), ...options.env }),
+		env: quietEnv(options.env),
 		stdin: 'ignore',
 		stdout: 'pipe',
 		stderr: 'pipe',
@@ -148,6 +167,25 @@ export async function run(
 		return { code, stdout, stderr };
 	} finally {
 		if (timer) clearTimeout(timer);
+	}
+}
+
+/**
+ * Runs any program on PATH, or at a full path, for finding out what this computer has, where
+ * a missing program is an answer rather than a failure. `undefined` when it is not there or
+ * could not be started.
+ */
+export async function probe(
+	program: string,
+	args: string[],
+	options: RunOptions = {},
+): Promise<ProcessResult | undefined> {
+	const path = isAbsolute(program) ? (existsSync(program) ? program : null) : Bun.which(program);
+	if (!path) return undefined;
+	try {
+		return await collect(path, args, options);
+	} catch {
+		return undefined;
 	}
 }
 

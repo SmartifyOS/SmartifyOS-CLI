@@ -108,6 +108,16 @@ export async function setUpPlatformio(onStep?: (step: SetUpStep) => void): Promi
 	await Bun.write(markerPath(), markerText());
 }
 
+/** Whether PlatformIO can be set up on this computer at all. */
+export function platformioRunsHere(): boolean {
+	try {
+		uvArchiveFor();
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /** Internal: the uv archive for this computer. */
 function uvArchiveFor(): { name: string; sha256: string } {
 	if (isMusl({ platform: process.platform, arch: process.arch, exists: existsSync })) {

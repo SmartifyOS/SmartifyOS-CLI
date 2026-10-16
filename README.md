@@ -26,8 +26,10 @@ Nothing else is needed, no Node, no Bun, no package manager. The installer downl
 Then open a new terminal and run:
 
 ```bash
-smartify-os
+smartify-os setup
 ```
+
+That gets your computer ready, see below. After it, `smartify-os` on its own shows everything it can do.
 
 ### Options
 
@@ -39,6 +41,26 @@ Set these before running the installer if you want something other than the defa
 | `SMARTIFY_OS_INSTALL_DIR`    | Install somewhere other than `~/.smartify-os/bin`                       |
 | `SMARTIFY_OS_NO_MODIFY_PATH` | Leave your shell config alone                                           |
 | `SMARTIFY_OS_BASE_URL`       | Download from a mirror instead of GitHub                                |
+
+## Setting up your computer
+
+```bash
+smartify-os setup                      # install what SmartifyOS needs
+smartify-os doctor                     # check what this computer has
+```
+
+SmartifyOS is built with Flutter, and `setup` installs it for you: the newest stable release, into `~/.smartify-os/tools/flutter`, out of your way. If you have Flutter already, that one is used and nothing is installed. `setup --platformio` also sets up PlatformIO, which builds the devices on your car's CAN bus (it otherwise sets itself up the first time you build one). Flutter needs git, and `setup` tells you how to get it if it is missing.
+
+`doctor` checks everything, the way `flutter doctor` does, and says what to do about anything missing:
+
+| Check                     | When it is missing                                                                      |
+| ------------------------- | --------------------------------------------------------------------------------------- |
+| Flutter and git           | An error. SmartifyOS does nothing without them                                          |
+| Xcode and CocoaPods, Visual Studio, or the Linux build tools | A warning. Only needed for `smartify-os run`, trying your car's app on this computer |
+| PlatformIO                | A warning. Only needed for the devices on your car's CAN bus                            |
+| Android platform tools    | A warning. Only needed if your setup works with Android devices                          |
+
+It exits with 1 when there is an error, so a script can rely on it.
 
 ## Starting your car
 
