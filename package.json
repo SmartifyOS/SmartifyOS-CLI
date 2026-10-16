@@ -1,6 +1,6 @@
 {
 	"name": "smartify-os-cli",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "The SmartifyOS command line tool, sets up, builds and deploys your car infotainment system",
 	"private": true,
 	"type": "module",
