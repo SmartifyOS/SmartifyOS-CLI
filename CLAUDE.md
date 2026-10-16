@@ -58,7 +58,7 @@ A car's `pubspec.yaml` names where SmartifyOS and every extension come from, und
 
 ## Creating a car
 
-`create` copies `smartify_os_app_template/` out of the SmartifyOS repo at the newest release, renames `my_car` and `My car`, and writes the owner's answers into its `lib/main.dart` as named arguments of the calls the template makes (`setUpMain` in `src/core/project/create.ts`). An answer whose call is not found is printed for the owner to add, never a failure. The layouts it offers are a copy of `Layouts` in core, so a new built-in layout is a change here too. `--from miata` copies the Miata app as it is, only its pubspec is pointed at SmartifyOS.
+`create` copies `smartify_os_app_template/` out of the SmartifyOS repo at the newest release, renames `my_car` and `My car`, and writes the owner's answers into its `lib/main.dart` as named arguments of the calls the template makes (`setUpMain` in `src/core/project/create.ts`). An answer whose call is not found is printed for the owner to add, never a failure. The layouts it offers are a copy of `Layouts` in core, so a new built-in layout is a change here too (and in the editor's new car dialog). `--dry-run` checks the answers and returns where the app would go, which the editor uses to check each page. `--from miata` copies the Miata app as it is, only its pubspec is pointed at SmartifyOS.
 
 ## What runs on the car
 

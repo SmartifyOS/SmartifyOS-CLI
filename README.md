@@ -54,6 +54,8 @@ Every question can be answered with a flag instead, `smartify-os create --help` 
 smartify-os create "Golf 4" --car "Volkswagen Golf IV" --layout split --driver-side right
 ```
 
+`--dry-run` only checks the answers and says where the app would go, without creating anything.
+
 `smartify-os create --from miata` copies the Miata app instead, the example car with everything in it, to learn from. It is copied as it is, so you give it your car's name and the rest in its `lib/main.dart` yourself.
 
 ## Your car

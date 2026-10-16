@@ -101,6 +101,10 @@ export const createCommand: Command = {
 		picture: { type: 'string', describe: 'A picture of the car, a .png or .jpg file' },
 		'reverse-camera': { type: 'boolean', describe: 'The car has a reverse camera on USB' },
 		dir: { type: 'string', describe: 'The folder to create it in (the default is here)' },
+		'dry-run': {
+			type: 'boolean',
+			describe: 'Only check the answers and say where it would go, without creating anything',
+		},
 	},
 	async run({ flags, positionals }) {
 		intro("Create your car's app");
@@ -126,6 +130,18 @@ export const createCommand: Command = {
 
 		const target = await pickTarget(flags, cwd, defaultParent, folderName, asking);
 		const setup = names ? await askSetup(flags, cwd, asking) : undefined;
+
+		if (flags['dry-run'] === true) {
+			outro(`It would go in ${theme.code(relative(cwd, target) || '.')}`);
+			return {
+				changed: false,
+				from: start,
+				name: names?.name ?? null,
+				packageName: folderName,
+				path: target,
+				setup: setup ?? null,
+			};
+		}
 
 		const core = await step('Finding the newest SmartifyOS', () => newestCore());
 		const label = isReleaseTag(core.source.ref) ? core.version : core.source.ref;
