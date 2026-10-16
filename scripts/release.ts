@@ -220,19 +220,27 @@ const bumps = {
 	major: `${base.major + 1}.0.0`,
 };
 const hasFeatures = commits.some((commit) => commit.type === 'feat');
-// The first release can be the version package.json has already.
-const firstRelease = lastTag === undefined;
+const existingTags = new Set((await git('tag', '--list', 'v*')).split('\n').filter(Boolean));
+// The version package.json has already can be released as it is while it has no tag: on
+// the first release, or again after a release that failed and had its tag deleted.
+const unreleased = !existingTags.has(`v${currentText}`);
 const finishPrerelease = `${base.major}.${base.minor}.${base.patch}`;
 const picked = answer(
 	await p.select({
 		message: 'Which version?',
-		initialValue: firstRelease ? currentText : hasFeatures ? bumps.minor : bumps.patch,
+		initialValue: unreleased ? currentText : hasFeatures ? bumps.minor : bumps.patch,
 		options: [
-			...(firstRelease
-				? [{ value: currentText, label: currentText, hint: 'the first release, as it is now' }]
+			...(unreleased
+				? [
+						{
+							value: currentText,
+							label: currentText,
+							hint: lastTag ? 'not released yet' : 'the first release, as it is now',
+						},
+					]
 				: []),
 			// A prerelease is finished by releasing the version it leads up to.
-			...(current.prerelease && !firstRelease
+			...(current.prerelease && !unreleased
 				? [{ value: finishPrerelease, label: finishPrerelease, hint: 'finish the prerelease' }]
 				: []),
 			{ value: bumps.patch, label: bumps.patch, hint: 'only fixes' },
@@ -243,7 +251,6 @@ const picked = answer(
 	}),
 );
 
-const existingTags = new Set((await git('tag', '--list', 'v*')).split('\n').filter(Boolean));
 const version =
 	picked !== 'other'
 		? picked
@@ -254,7 +261,7 @@ const version =
 					validate(value) {
 						const parsed = parseVersion(value ?? '');
 						if (!parsed) return 'Write it as x.y.z, like 1.2.3, or 1.2.3-beta.1.';
-						if (!firstRelease && !isAfter(parsed, current)) {
+						if (!(unreleased && value?.trim() === currentText) && !isAfter(parsed, current)) {
 							return `It has to come after ${currentText}.`;
 						}
 						return undefined;
