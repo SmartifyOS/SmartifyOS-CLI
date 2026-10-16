@@ -23,6 +23,7 @@ src/commands/       one file per command, switched on in commands/index.ts. A gr
 src/ui/             anything that talks to the terminal, including help rendering
 src/core/           process runners, config, paths, the real work
 src/core/linux/     what a car needs installed on Linux, and scripts/, the shell that runs on it
+src/core/device/    the ESP32s on a car's CAN bus: their projects, PlatformIO, the stick
 src/utils/          small helpers with no opinion about the terminal
 scripts/build.ts    cross compiles every target
 ```
@@ -59,13 +60,19 @@ A car's `pubspec.yaml` names where SmartifyOS and every extension come from, und
 
 `export installer` and `export update` put a `smartify-os` folder on a USB stick (layout in `src/core/export/export.ts`). What runs on the car is shell, in `src/core/linux/scripts/`, embedded in the binary as text. **`linux.sh` is the one step** every install, build on a car, build for a car and (later) update on the car runs, so there is never a second way of doing it. It installs a package set as one generated `.deb`, stateless every time. The CLI checks and merges the lists, the script only carries them out.
 
-`linux.sh system` is the base setup that makes a computer a car: the service that starts SmartifyOS in labwc on tty1 and again whenever it quits, passwordless sudo, the udisks2 polkit rule, no cursor, a quiet boot. It is in `linux.sh` rather than `install.sh` so an update can run it too, and what it needs installed is `carSystem` in `src/core/linux/set.ts`, in the run set, so every update keeps it. `install.sh` draws itself like clack and runs every step with stdin from `/dev/null`: apt puts a terminal it is given into raw mode, which breaks the drawing.
+`linux.sh system` is the base setup that makes a computer a car: the service that starts SmartifyOS in labwc on tty1 and again whenever it quits, passwordless sudo, the udisks2 polkit rule, the `video` group (the reverse camera), no cursor, a quiet boot. It is in `linux.sh` rather than `install.sh` so an update can run it too, and what it needs installed is `carSystem` in `src/core/linux/set.ts`, in the run set, so every update keeps it. `install.sh` draws itself like clack and runs every step with stdin from `/dev/null`: apt puts a terminal it is given into raw mode, which breaks the drawing.
 
 A new version only ever replaces `DIR/app` by being made complete as `DIR/app.new` and then two renames (`app` to `app.old`, `app.new` to `app`), in `install.sh` and in core's `LinuxUpdateBackend` alike. The service's `before-start` (`system_before_start` in `linux.sh`) relies on exactly that to put right a power cut halfway and to go back from a version that never lasts a minute. Every export carries a `SHA256SUMS` that both check before anything on the stick runs.
 
 The scripts have to run under the bash 3.2 macOS ships, so `bun test` can run them against the stub apt in `linux.test.ts`: no associative arrays, no `mapfile`. Never `cmd | grep -q` under `pipefail` (grep exits early, the writer dies of SIGPIPE, a match becomes a failure), use a here-string.
 
 The official Linux is named in one place, `src/core/linux/distro.ts`: Debian 13, and Raspberry Pi OS Lite on a Pi, which reports itself as Debian 13 (why is in `LINUX_SYSTEM.md` in the SmartifyOS repo). Building for a car on another computer happens in a kept container of that image, set up with the same `linux.sh` steps a car runs (`src/core/export/container.ts`), never with a Dockerfile of its own.
+
+## The devices on a car's CAN bus
+
+`smartify-os device` makes, builds and exports the firmware of the ESP32s on a car's bus (`DEVICES.md` in the SmartifyOS repo is the owner's guide). Each is a PlatformIO project in `<app>/devices/<name>/`, built against the header core writes into `<app>/firmware/` while `smartify-os run` runs the app, and against the library and platform under `smartify_os: firmware:` in core's pubspec, which `syncIni` puts back into `platformio.ini` before every build. The version lives in the device's `smartify-os.json` and goes in as `PLATFORMIO_BUILD_FLAGS`, never in the owner's code.
+
+PlatformIO is never looked for on PATH. `src/core/device/platformio.ts` installs it with uv into `~/.smartify-os/tools`, both pinned there, uv with its checksums written into that file: moving either on is a change to it. Every export moves a `devices/` folder already on the stick over into the new one, since `device export` can come first.
 
 ## Writing style
 

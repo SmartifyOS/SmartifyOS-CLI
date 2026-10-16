@@ -171,12 +171,13 @@ async function verifyChecksum(plan: UpdatePlan, archivePath: string): Promise<vo
 }
 
 /**
- * Internal: unpacks the archive.
+ * Unpacks a downloaded `.tar.gz` or `.zip`. Also how uv is unpacked, see
+ * src/core/device/platformio.ts.
  *
  * `tar` on macOS, on Linux and on Windows 10 1803 and later is all bsdtar, and bsdtar reads
  * a zip as happily as a tar.gz, so one tool covers every platform there is a build for.
  */
-async function unpack(archivePath: string, into: string): Promise<void> {
+export async function unpack(archivePath: string, into: string): Promise<void> {
 	const args = archivePath.endsWith('.zip')
 		? ['tar', '-xf', archivePath, '-C', into]
 		: ['tar', '-xzf', archivePath, '-C', into];

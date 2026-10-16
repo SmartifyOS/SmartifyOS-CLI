@@ -1,9 +1,9 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { addExamplePlatforms } from '../../core/extension/create.ts';
-import { runInTerminal, runStreaming } from '../../core/process.ts';
+import { desktopPlatform } from '../../core/flutter.ts';
 import { requireExtension } from '../../core/project/find.ts';
-import { emit, forwardInput, isJsonMode } from '../../ui/json.ts';
+import { runAttached } from '../../ui/attached.ts';
 import { intro, log } from '../../ui/output.ts';
 import { step } from '../../ui/project.ts';
 import { theme } from '../../ui/theme.ts';
@@ -11,14 +11,6 @@ import { CliError } from '../../utils/errors.ts';
 import { binaryName } from '../flags.ts';
 import type { Command } from '../types.ts';
 import { findSmartifyOs } from './smartify-os.ts';
-
-/** Flutter's name for the desktop this runs on. */
-function desktop(): 'macos' | 'linux' | 'windows' {
-	if (process.platform === 'darwin') return 'macos';
-	if (process.platform === 'win32') return 'windows';
-	if (process.platform === 'linux') return 'linux';
-	throw new CliError('SmartifyOS runs on macOS, Linux and Windows computers, not on this one.');
-}
 
 /**
  * Runs the extension's example app, SmartifyOS with just this extension in it, on this
@@ -39,7 +31,7 @@ export const extensionRunCommand: Command = {
 			});
 		}
 
-		const platform = desktop();
+		const platform = desktopPlatform();
 		intro('Run an extension');
 
 		await findSmartifyOs(extension.dir);
@@ -51,9 +43,7 @@ export const extensionRunCommand: Command = {
 		}
 
 		log.info(`Starting it. Press ${theme.code('r')} to see a change, ${theme.code('q')} to stop.`);
-		const code = isJsonMode()
-			? await runForProgram(['run', '-d', platform], example)
-			: await runInTerminal('flutter', ['run', '-d', platform], example);
+		const code = await runAttached('flutter', ['run', '-d', platform], example);
 		if (code !== 0) {
 			throw new CliError('The example app stopped with an error.', {
 				hint: 'What Flutter printed above says why.',
@@ -62,19 +52,3 @@ export const extensionRunCommand: Command = {
 		return { platform };
 	},
 };
-
-/**
- * Internal: `flutter run` for a program. What Flutter prints arrives as `output` events, and
- * `{"input": "r"}` on stdin is the same as pressing r.
- */
-async function runForProgram(args: string[], cwd: string): Promise<number> {
-	const flutter = runStreaming('flutter', args, cwd, (stream, text) =>
-		emit({ type: 'output', stream, text }),
-	);
-	const stop = forwardInput((text) => flutter.write(text));
-	try {
-		return await flutter.exited;
-	} finally {
-		stop();
-	}
-}

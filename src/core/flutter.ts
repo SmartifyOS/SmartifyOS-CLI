@@ -166,3 +166,16 @@ export async function flutterVersion(): Promise<FlutterVersion> {
 		hint: `Run flutter --version to see what is wrong with it.\n${result.stderr.trim()}`,
 	});
 }
+
+/**
+ * Flutter's name for the desktop this computer is, which is what SmartifyOS runs on while it
+ * is being made.
+ *
+ * @throws {CliError} on any other.
+ */
+export function desktopPlatform(): 'macos' | 'linux' | 'windows' {
+	if (process.platform === 'darwin') return 'macos';
+	if (process.platform === 'win32') return 'windows';
+	if (process.platform === 'linux') return 'linux';
+	throw new CliError('SmartifyOS runs on macOS, Linux and Windows computers, not on this one.');
+}

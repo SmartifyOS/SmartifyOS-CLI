@@ -28,6 +28,8 @@ const skippedNames = new Set([
 	'.flutter-plugins-dependencies',
 	'ephemeral',
 	'Pods',
+	// What PlatformIO builds for a device on the CAN bus, see src/core/device/project.ts.
+	'.pio',
 	// Where the Android SDK is on this computer.
 	'local.properties',
 ]);

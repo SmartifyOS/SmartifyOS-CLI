@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { chmod, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { version as cliVersion } from '../../utils/version.ts';
@@ -33,6 +34,9 @@ import { packBundle, packSource } from './pack.ts';
  *   app.tar.gz             the finished build, when this computer built it
  *   packages/run/          what the car needs to run it, see src/core/linux/set.ts
  *   packages/build/        what the car needs to build it, when it does
+ *   devices/               firmware for the devices on the car's CAN bus, written by
+ *                          `smartify-os device export` (src/core/device/stick.ts) and kept
+ *                          by every export
  */
 
 /** An installer for a new car, or an update for one that has SmartifyOS. */
@@ -43,6 +47,9 @@ export type BuildOn = 'car' | 'computer';
 
 /** The name of the folder on the stick. */
 export const exportFolderName = 'smartify-os';
+
+/** The folder in it the devices' firmware is in (`CanFirmwareFiles.folderName` in core). */
+export const devicesOnStick = 'devices';
 
 /** A finished build made on this computer. */
 export interface Built {
@@ -71,7 +78,7 @@ export interface ExportInput {
 export interface ExportResult {
 	/** The `smartify-os` folder. */
 	folder: string;
-	/** Every file in it, relative to it. */
+	/** Every file the export wrote in it, relative to it. A `devices` folder there stays. */
 	files: string[];
 	sets: PackageSet[];
 }
@@ -237,6 +244,9 @@ export async function writeExport(
 		await write('README.txt', renderReadme(input));
 		await write(checksumsName, await renderChecksums(staging, files));
 
+		// The devices' firmware is not the export's, and an update made after it keeps it.
+		const devices = join(folder, devicesOnStick);
+		if (existsSync(devices)) await rename(devices, join(staging, devicesOnStick));
 		await rm(folder, { recursive: true, force: true });
 		await rename(staging, folder);
 		return { folder, files: files.sort(), sets };

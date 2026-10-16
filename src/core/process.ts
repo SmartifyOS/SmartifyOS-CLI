@@ -1,9 +1,12 @@
+import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { CliError } from '../utils/errors.ts';
+import { pioPath, platformioEnv, uvEnv, uvPath } from './device/tools.ts';
 
 /**
- * Running the tools the CLI hides: `flutter`, `dart` and `git`, and `tar`, `bash`, `sudo` and
- * a container engine for putting SmartifyOS on a car.
+ * Running the tools the CLI hides: `flutter`, `dart` and `git`, `tar`, `bash`, `sudo` and a
+ * container engine for putting SmartifyOS on a car, and `pio` (with the `uv` it is installed
+ * with) for the firmware of the devices on its CAN bus.
  *
  * Everything goes through here so that a missing tool is always the same friendly message,
  * and so that output is captured rather than sprayed over the prompts. Only `inherit` hands
@@ -11,7 +14,17 @@ import { CliError } from '../utils/errors.ts';
  * {@link runStreaming} is the same for a program driving the CLI with `--json`.
  */
 
-export type Tool = 'flutter' | 'dart' | 'git' | 'tar' | 'bash' | 'sudo' | 'docker' | 'podman';
+export type Tool =
+	| 'flutter'
+	| 'dart'
+	| 'git'
+	| 'tar'
+	| 'bash'
+	| 'sudo'
+	| 'docker'
+	| 'podman'
+	| 'pio'
+	| 'uv';
 
 /** What a finished process left behind. */
 export interface ProcessResult {
@@ -37,6 +50,8 @@ const installHints: Record<Tool, string> = {
 	sudo: 'Install sudo with your package manager, or run this as root.',
 	docker: 'Install Docker Desktop from https://docs.docker.com/get-docker/ and start it.',
 	podman: 'Install Podman from https://podman.io/docs/installation and start it.',
+	pio: 'SmartifyOS sets it up by itself the first time it builds a device. Run smartify-os device flash.',
+	uv: 'SmartifyOS sets it up by itself the first time it builds a device. Run smartify-os device flash.',
 };
 
 const toolNames: Record<Tool, string> = {
@@ -48,7 +63,23 @@ const toolNames: Record<Tool, string> = {
 	sudo: 'sudo',
 	docker: 'Docker',
 	podman: 'Podman',
+	pio: 'PlatformIO',
+	uv: 'uv',
 };
+
+/**
+ * Tools the CLI installs for itself (see src/core/device/tools.ts), which are never looked
+ * for on PATH, and what each needs in its environment.
+ */
+const ownTools: Partial<Record<Tool, { path: () => string; env: () => Record<string, string> }>> = {
+	pio: { path: pioPath, env: platformioEnv },
+	uv: { path: uvPath, env: uvEnv },
+};
+
+/** Internal: what a tool runs with on top of the environment. */
+function toolEnv(tool: Tool): Record<string, string> {
+	return ownTools[tool]?.env() ?? {};
+}
 
 /**
  * Where a tool is on this machine.
@@ -59,6 +90,12 @@ const toolNames: Record<Tool, string> = {
  * @throws {CliError} when it is not installed.
  */
 export function findTool(tool: Tool): string {
+	const own = ownTools[tool]?.path();
+	if (own) {
+		if (existsSync(own)) return own;
+		throw new CliError(`${toolNames[tool]} is not set up yet.`, { hint: installHints[tool] });
+	}
+
 	if (tool === 'dart') {
 		const flutter = Bun.which('flutter');
 		const bundled = flutter ? Bun.which('dart', { PATH: dirname(flutter) }) : null;
@@ -94,7 +131,7 @@ export async function run(
 ): Promise<ProcessResult> {
 	const proc = Bun.spawn([findTool(tool), ...args], {
 		cwd: options.cwd,
-		env: quietEnv(options.env),
+		env: quietEnv({ ...toolEnv(tool), ...options.env }),
 		stdin: 'ignore',
 		stdout: 'pipe',
 		stderr: 'pipe',
@@ -148,7 +185,7 @@ export async function runInTerminal(
 ): Promise<number> {
 	const proc = Bun.spawn([findTool(tool), ...args], {
 		cwd,
-		env: { ...process.env, ...env },
+		env: { ...process.env, ...toolEnv(tool), ...env },
 		stdin: 'inherit',
 		stdout: 'inherit',
 		stderr: 'inherit',
@@ -178,7 +215,7 @@ export function runStreaming(
 ): StreamingProcess {
 	const proc = Bun.spawn([findTool(tool), ...args], {
 		cwd,
-		env: { ...process.env, ...env },
+		env: { ...process.env, ...toolEnv(tool), ...env },
 		stdin: 'pipe',
 		stdout: 'pipe',
 		stderr: 'pipe',

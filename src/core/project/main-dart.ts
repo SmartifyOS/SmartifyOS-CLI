@@ -91,8 +91,8 @@ export function codeOnly(source: string): string {
 	return out.join('');
 }
 
-/** Internal: the index of the bracket that closes the one at `open`, in code only text. */
-function closingBracket(code: string, open: number): number {
+/** The index of the bracket that closes the one at `open`, in code only text. */
+export function closingBracket(code: string, open: number): number {
 	const pairs: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
 	const stack: string[] = [];
 	for (let i = open; i < code.length; i++) {
@@ -132,8 +132,8 @@ function elements(code: string, open: number, close: number): { start: number; e
 	return found;
 }
 
-/** Internal: exactly one match of `pattern` in the code, or nothing when there are none or several. */
-function onlyMatch(code: string, pattern: RegExp): RegExpExecArray | undefined {
+/** Exactly one match of `pattern` in the code, or nothing when there are none or several. */
+export function onlyMatch(code: string, pattern: RegExp): RegExpExecArray | undefined {
 	const all = [...code.matchAll(new RegExp(pattern.source, 'g'))];
 	return all.length === 1 ? all[0] : undefined;
 }
@@ -151,9 +151,10 @@ function indentAt(text: string, index: number): string {
  * Puts a new element at the end of a bracketed list, in the list's own style.
  *
  * A list over several lines gets a line of its own at the indentation of the others, a list
- * on one line gets `, element` at the end, and an empty one gets just the element.
+ * on one line gets `, element` at the end, and an empty one gets just the element. An
+ * argument list works the same way.
  */
-function appendElement(source: string, code: string, open: number, element: string): string {
+export function appendElement(source: string, code: string, open: number, element: string): string {
 	const close = closingBracket(code, open);
 	const items = elements(code, open, close);
 	const last = items[items.length - 1];
@@ -181,7 +182,11 @@ function appendElement(source: string, code: string, open: number, element: stri
 
 /** Adds the import, in order among the other package imports, unless it is already there. */
 function addImport(source: string, entry: ExtensionEntry): string {
-	const line = importLine(entry);
+	return addImportLine(source, importLine(entry));
+}
+
+/** Adds an import line, in order among the other package imports, unless it is already there. */
+export function addImportLine(source: string, line: string): string {
 	if (source.includes(line)) return source;
 
 	const lines = source.split('\n');

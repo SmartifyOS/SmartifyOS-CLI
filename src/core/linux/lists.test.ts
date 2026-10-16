@@ -111,6 +111,15 @@ describe('parseLists', () => {
 		]);
 	});
 
+	test("SmartifyOS's own firmware key is not about Linux, and not unknown either", () => {
+		const { lists, problems } = parseLists({
+			linux: { run: { groups: ['dialout'] } },
+			firmware: { library: 'https://example.com/lib.git', version: 'v0.1.0', platform: 'x@1' },
+		});
+		expect(lists.groups).toEqual(['dialout']);
+		expect(problems).toEqual([]);
+	});
+
 	test('a list that is not a list is a mistake', () => {
 		const { problems } = parseLists({ linux: { build: { apt: 'libusb-1.0-0-dev' } } });
 		expect(problems).toEqual([

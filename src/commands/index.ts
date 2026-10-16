@@ -1,8 +1,10 @@
+import { deviceCommand } from './device/index.ts';
 import { exportCommand } from './export/index.ts';
 import { extensionCommand } from './extension/index.ts';
 import { helpCommand } from './help.ts';
 import { linkCommand } from './link.ts';
 import { register } from './registry.ts';
+import { runCommand } from './run.ts';
 import { selfUpdateCommand } from './self-update.ts';
 import { unlinkCommand } from './unlink.ts';
 import { updateCommand } from './update.ts';
@@ -20,7 +22,9 @@ import { updateCommand } from './update.ts';
 register(
 	updateCommand,
 	extensionCommand,
+	runCommand,
 	exportCommand,
+	deviceCommand,
 	linkCommand,
 	unlinkCommand,
 	selfUpdateCommand,

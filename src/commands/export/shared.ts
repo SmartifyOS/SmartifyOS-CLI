@@ -287,8 +287,11 @@ async function pickArch(given: Flags[string], builder: Builder): Promise<LinuxAr
 	return arch;
 }
 
-/** Internal: the folder it goes in, from the flag, or picked from the drives plugged in. */
-async function pickTarget(given: Flags[string]): Promise<string> {
+/**
+ * The folder it goes in, from the flag, or picked from the drives plugged in. Also where
+ * `device export` puts the firmware of the car's devices.
+ */
+export async function pickTarget(given: Flags[string]): Promise<string> {
 	let path = typeof given === 'string' && given.trim() ? given.trim() : undefined;
 
 	if (!path) {

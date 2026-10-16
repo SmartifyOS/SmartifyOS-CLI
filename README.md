@@ -50,6 +50,7 @@ smartify-os extension add <url>        # add an extension from its GitHub addres
 smartify-os extension update           # move your extensions to their newest releases
 smartify-os extension remove <name>    # take one out again
 smartify-os extension list             # what your car runs, and which versions
+smartify-os run                        # try your car's app on this computer
 ```
 
 Every one of them tries the change before it keeps it: it fetches the new versions and checks that your app and every extension still build. If anything does not, it puts everything back the way it was and tells you which extension is at fault. A new SmartifyOS that an extension has not caught up with yet is not a problem: the update offers that extension's newest release along with it, or leaves your car as it was when there is none.
@@ -77,6 +78,18 @@ SmartifyOS is built one of two ways, picked with `--build-on`:
 Building on this computer asks what the car runs on, or takes `--arch arm64` (a Raspberry Pi) or `--arch x64` (a PC). A Linux build only starts on the Linux it was built on, which is why it is built in a container of the car's Linux. The first build sets the container up with Flutter and everything building needs, which takes a while. It is kept, stopped, so every build after it is quick. Building for the other architecture than this computer's runs emulated and takes a good deal longer. `docker rm -f smartify-os-builder-arm64` (or `-x64`) throws a container away, if you ever want the space back.
 
 Whatever your car needs installed on Linux (a driver, a program an extension runs, a library to build against) is installed for you, worked out from SmartifyOS, every extension and your own app. Extensions list it in their `pubspec.yaml`, see "Linux packages" in `EXTENSIONS.md`. It all goes in as one package called `smartify-os-run` (and `smartify-os-build` on a car that builds itself), so whatever an extension stops needing is taken out again, and nothing you installed yourself is ever touched. Something that would take part of the car's system out to make room is left out, with a warning naming the extension that asked for it.
+
+## Devices on the CAN bus
+
+The ESP32 boards around your car, on its CAN bus, run small Arduino programs. `DEVICES.md` in the [SmartifyOS repository](https://github.com/Mauznemo/smartify_os_flutter_test) is the full guide. Run these in your car's app folder, or in a device's folder.
+
+```bash
+smartify-os device create              # the program of one device, in devices/<name>/
+smartify-os device flash               # build it and put it on its board, over USB
+smartify-os device export              # new firmware for your devices on a USB stick
+```
+
+The devices and their messages are defined in your car's app, and `smartify-os run` writes them out as `firmware/smartify_os_network.h` for the devices' programs. Building is done by [PlatformIO](https://platformio.org/), which the CLI installs by itself into `~/.smartify-os/tools` the first time, with a Python of its own, so there is nothing to install. The first build also downloads the ESP32 tools, which takes a few minutes. Every device is built against the SmartifyOS-ESP32 library release your car's SmartifyOS names, and gets the board's default partition table, which has room for updates over the bus.
 
 ## Making an extension
 

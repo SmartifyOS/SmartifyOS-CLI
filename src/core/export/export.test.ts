@@ -92,6 +92,7 @@ describe('isSkipped', () => {
 		expect(isSkipped(join(app, '.dart_tool'))).toBe(true);
 		expect(isSkipped(join(app, 'pubspec_overrides.yaml'))).toBe(true);
 		expect(isSkipped(join(app, 'car.iml'))).toBe(true);
+		expect(isSkipped(join(app, 'devices', 'headlights', '.pio'))).toBe(true);
 		expect(isSkipped(join(app, 'lib'))).toBe(false);
 	});
 });
@@ -174,6 +175,18 @@ describe('writeExport', () => {
 		expect(result.files).not.toContain('install.sh');
 		expect(await Bun.file(join(result.folder, 'install.sh')).exists()).toBe(false);
 		expect((await readExistingExport(stick))?.kind).toBe('update');
+	});
+
+	test("keeps the devices' firmware already on the stick", async () => {
+		const stick = join(dir, 'stick-devices');
+		await Bun.write(join(stick, 'smartify-os', 'devices', 'headlights.conf'), 'FORMAT=1\n');
+		await Bun.write(join(stick, 'smartify-os', 'old.txt'), 'from before\n');
+		const result = await writeExport({ ...(await input('car')), kind: 'update' }, stick);
+		expect(await Bun.file(join(result.folder, 'devices', 'headlights.conf')).text()).toBe(
+			'FORMAT=1\n',
+		);
+		expect(await Bun.file(join(result.folder, 'old.txt')).exists()).toBe(false);
+		expect(result.files.some((file) => file.startsWith('devices/'))).toBe(false);
 	});
 
 	test('there is nothing on a stick that never had an export', async () => {

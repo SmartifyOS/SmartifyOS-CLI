@@ -95,7 +95,8 @@ export function parseLists(value: unknown): { lists: PackageLists; problems: Lis
 
 	const root = asMap(value, 'smartify_os', problem);
 	if (!root) return { lists, problems };
-	unknownKeys(root, ['linux'], 'smartify_os', problem);
+	// `firmware` is SmartifyOS's own, read by the device commands (src/core/device/network.ts).
+	unknownKeys(root, ['linux', 'firmware'], 'smartify_os', problem);
 
 	const linux = asMap(root.linux, 'smartify_os.linux', problem);
 	if (!linux) return { lists, problems };
