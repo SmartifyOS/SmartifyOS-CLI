@@ -1,6 +1,7 @@
 import { isPlatformioReady, platformioRunsHere } from '../core/device/platformio.ts';
 import { type FlutterSetUp, type FlutterSetUpStep, setUpFlutter } from '../core/setup/flutter.ts';
 import { checkComputer, readySummary } from '../ui/doctor.ts';
+import { nextSteps } from '../ui/next-steps.ts';
 import { intro, outro } from '../ui/output.ts';
 import { confirm, isInteractive, spinner } from '../ui/prompt.ts';
 import { theme } from '../ui/theme.ts';
@@ -34,11 +35,10 @@ export const setupCommand: Command = {
 		}
 
 		const report = await checkComputer();
-		outro(
-			report.warnings === 0
-				? `This computer is ready. Run ${theme.code(`${binaryName} create`)} to start your car.`
-				: readySummary(report),
-		);
+		nextSteps([
+			{ kind: 'create', text: `Run ${theme.code(`${binaryName} create`)} to start your car.` },
+		]);
+		outro(report.warnings === 0 ? 'This computer is ready.' : readySummary(report));
 		return {
 			flutter: {
 				installed: flutter.installed,

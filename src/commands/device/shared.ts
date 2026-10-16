@@ -1,4 +1,4 @@
-import { basename, relative } from 'node:path';
+import { basename } from 'node:path';
 import {
 	type BuiltFirmware,
 	buildDevice,
@@ -20,6 +20,7 @@ import { step } from '../../ui/project.ts';
 import { select, spinner } from '../../ui/prompt.ts';
 import { theme } from '../../ui/theme.ts';
 import { CliError } from '../../utils/errors.ts';
+import { pubPath } from '../../utils/pub-path.ts';
 import { binaryName } from '../flags.ts';
 import type { FlagSpec, Flags } from '../types.ts';
 
@@ -39,11 +40,11 @@ export const raiseFlag: Record<string, FlagSpec> = {
 /** Internal: the answers `--raise` takes. */
 const raiseValues = ['patch', 'minor', 'major', 'no'] as const;
 
-/** A device, the way `--json` reports one. */
+/** A device, the way `--json` reports one. Its folder is relative to the car's app. */
 export function deviceData(device: DeviceProject, appDir: string) {
 	return {
 		name: device.settings.device,
-		folder: relative(appDir, device.dir),
+		folder: pubPath(appDir, device.dir),
 		version: device.settings.version,
 		board: device.board ?? null,
 	};

@@ -31,6 +31,11 @@ export interface Check {
 	neededFor?: string;
 	/** What to do about it, only when it is not ok. */
 	hint?: string;
+	/**
+	 * The arguments of the smartify-os command that puts it right, when one does, like
+	 * `['setup']`. The hint says the same in words, a GUI can make it a button.
+	 */
+	fix?: string[];
 	/** Where it is, when it was found. */
 	path?: string;
 }
@@ -60,6 +65,7 @@ async function checkFlutter(): Promise<Check> {
 			status: 'error',
 			summary: 'Not installed, and SmartifyOS needs it for everything',
 			hint: 'Run smartify-os setup, which installs it for you.',
+			fix: ['setup'],
 		};
 	}
 	try {
@@ -79,6 +85,8 @@ async function checkFlutter(): Promise<Check> {
 			]
 				.filter(Boolean)
 				.join('\n'),
+			// The one setup installed it puts right by installing it again.
+			...(found.own ? { fix: ['setup'] } : {}),
 			path: found.path,
 		};
 	}
@@ -105,7 +113,7 @@ async function checkGit(): Promise<Check> {
 
 /** What `smartify-os run` needs besides Flutter, which is different on every desktop. */
 async function checkDesktop(): Promise<Check> {
-	const neededFor = "Only needed to try your car's app on this computer (smartify-os run).";
+	const neededFor = "Only needed to try your car's app on this computer.";
 	if (process.platform === 'darwin') return await checkXcode(neededFor);
 	if (process.platform === 'win32') return await checkVisualStudio(neededFor);
 	return await checkLinuxTools(neededFor);
@@ -223,6 +231,7 @@ async function checkPlatformio(): Promise<Check> {
 			? 'An older version, updated when it is next used'
 			: 'Not set up',
 		hint: 'Run smartify-os setup --platformio, or it sets itself up the first time you build a device.',
+		fix: ['setup', '--platformio'],
 	};
 }
 

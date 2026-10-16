@@ -15,11 +15,13 @@ import {
 	listDevices,
 } from '../../core/device/project.ts';
 import { requireCar } from '../../core/project/find.ts';
+import { type NextStep, nextSteps } from '../../ui/next-steps.ts';
 import { intro, log, outro } from '../../ui/output.ts';
 import { readCarStep, step } from '../../ui/project.ts';
-import { note, select, text } from '../../ui/prompt.ts';
+import { select, text } from '../../ui/prompt.ts';
 import { theme } from '../../ui/theme.ts';
 import { CliError } from '../../utils/errors.ts';
+import { pubPath } from '../../utils/pub-path.ts';
 import { binaryName } from '../flags.ts';
 import type { Command } from '../types.ts';
 
@@ -135,27 +137,43 @@ export const deviceCreateCommand: Command = {
 
 		const folder = relative(process.cwd(), created.dir) || '.';
 		const inHeader = (await readNodes(app.dir))?.some((n) => n.name === cppName(device.name));
-		const steps = [
+		const folderInApp = pubPath(app.dir, created.dir);
+		const program = `${folderInApp}/src/main.cpp`;
+		const steps: NextStep[] = [
 			...(isNew
 				? [
-						`Give it the messages it sends, in your car's app. ${theme.dim('DEVICES.md in the SmartifyOS repository shows how.')}`,
+						{
+							kind: 'add-messages',
+							text: `Give it the messages it sends, in your car's app. ${theme.dim('DEVICES.md in the SmartifyOS repository shows how.')}`,
+						},
 					]
 				: []),
 			...(inHeader
 				? []
 				: [
-						`Run ${theme.code(`${binaryName} run`)} once, so SmartifyOS writes ${theme.code(headerPath)} with it in.`,
+						{
+							kind: 'run',
+							text: `Run ${theme.code(`${binaryName} run`)} once, so SmartifyOS writes ${theme.code(headerPath)} with it in.`,
+						},
 					]),
-			`Write its program in ${theme.code(join(folder, 'src', 'main.cpp'))}.`,
-			`Plug the board in and run ${theme.code(`${binaryName} device flash`)} in ${theme.code(folder)}.`,
+			{
+				kind: 'write-program',
+				text: `Write its program in ${theme.code(join(folder, 'src', 'main.cpp'))}.`,
+				path: program,
+			},
+			{
+				kind: 'flash',
+				text: `Plug the board in and run ${theme.code(`${binaryName} device flash`)} in ${theme.code(folder)}.`,
+				path: folderInApp,
+			},
 		];
-		note(steps.map((line, index) => `${index + 1}. ${line}`).join('\n'), 'Next');
+		nextSteps(steps);
 		outro('All done.');
 
 		return {
 			device: { name: device.name, node: device.node, title: device.title, new: isNew },
 			board,
-			folder: relative(app.dir, created.dir),
+			folder: folderInApp,
 			files: created.files,
 			app: added
 				? added.kind === 'done'

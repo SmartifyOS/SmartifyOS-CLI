@@ -23,9 +23,10 @@ import {
 	newestCore,
 	templateFolder,
 } from '../../core/smartify-os.ts';
+import { nextSteps } from '../../ui/next-steps.ts';
 import { intro, log, outro } from '../../ui/output.ts';
 import { step } from '../../ui/project.ts';
-import { isInteractive, note, text } from '../../ui/prompt.ts';
+import { isInteractive, text } from '../../ui/prompt.ts';
 import { theme } from '../../ui/theme.ts';
 import { CliError } from '../../utils/errors.ts';
 import { pubPath } from '../../utils/pub-path.ts';
@@ -142,20 +143,33 @@ export const extensionCreateCommand: Command = {
 		}
 
 		const folder = relative(cwd, target) || '.';
-		note(
+		nextSteps(
 			[
-				`${theme.code(`cd ${folder}`)}`,
-				`Start in ${theme.code(`lib/src/${names.snake}_extension.dart`)}.`,
-				`${theme.code(`${binaryName} extension run`)}  runs it in SmartifyOS on this computer`,
+				{ kind: 'open-folder', text: theme.code(`cd ${folder}`), path: target },
+				{
+					kind: 'edit',
+					text: `Start in ${theme.code(`lib/src/${names.snake}_extension.dart`)}.`,
+					path: `lib/src/${names.snake}_extension.dart`,
+				},
+				{
+					kind: 'run-extension',
+					text: `${theme.code(`${binaryName} extension run`)}  runs it in SmartifyOS on this computer`,
+				},
 				...(project?.kind === 'car'
 					? [
-							`${theme.code(`${binaryName} link ${relative(project.dir, target)}`)}  in your car's app puts it in your car`,
+							{
+								kind: 'link',
+								text: `${theme.code(`${binaryName} link ${relative(project.dir, target)}`)}  in your car's app puts it in your car`,
+								path: target,
+							},
 						]
 					: []),
-				'',
-				'EXTENSIONS.md in the SmartifyOS repository explains everything else.',
-			].join('\n'),
-			'Next',
+				{
+					kind: 'read-guide',
+					text: 'EXTENSIONS.md in the SmartifyOS repository explains everything else.',
+				},
+			],
+			{ numbered: false },
 		);
 		outro(`${theme.success(theme.strong(names.name))} is ready`);
 		return {

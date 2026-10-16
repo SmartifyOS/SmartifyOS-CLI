@@ -60,7 +60,7 @@ SmartifyOS is built with Flutter, and `setup` installs it for you: the newest st
 | PlatformIO                | A warning. Only needed for the devices on your car's CAN bus                            |
 | Android platform tools    | A warning. Only needed if your setup works with Android devices                          |
 
-It exits with 1 when there is an error, so a script can rely on it.
+It exits with 1 when there is an error, so a script can rely on it. With `--json` every check has an `id`, a `status` and what it found, and `fix` holds the arguments of the command that puts it right when there is one (`setup`, or `setup --platformio`).
 
 ## Starting your car
 
@@ -127,6 +127,7 @@ The ESP32 boards around your car, on its CAN bus, run small Arduino programs. `D
 smartify-os device create              # the program of one device, in devices/<name>/
 smartify-os device flash               # build it and put it on its board, over USB
 smartify-os device export              # new firmware for your devices on a USB stick
+smartify-os device list                # the devices with a program, and their versions
 ```
 
 The devices and their messages are defined in your car's app, and `smartify-os run` writes them out as `firmware/smartify_os_network.h` for the devices' programs. Building is done by [PlatformIO](https://platformio.org/), which the CLI installs by itself into `~/.smartify-os/tools` the first time, with a Python of its own, so there is nothing to install. The first build also downloads the ESP32 tools, which takes a few minutes. Every device is built against the SmartifyOS-ESP32 library release your car's SmartifyOS names, and gets the board's default partition table, which has room for updates over the bus.
@@ -210,6 +211,8 @@ The first line is always `start`. The last line is always `result`, which carrie
 | `prompt-invalid` | The answer to prompt `id` was refused, `message` says why, and the question is still open  |
 | `output`         | A line printed by Flutter while `extension run` runs: `stream`, `text`                     |
 | `result`         | The end, see above                                                                         |
+
+A `note` that says what to do next carries the same steps as `data.steps`, each with a `kind` (like `run` or `flash`), its `text`, and the `path` it is about when there is one, so a GUI can say each step its own way, with its buttons instead of the commands to type.
 
 What a program can write to stdin, one JSON object per line:
 

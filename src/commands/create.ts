@@ -35,9 +35,10 @@ import {
 	newestCore,
 } from '../core/smartify-os.ts';
 import { copyFolder, withCoreFolder } from '../core/template.ts';
+import { nextSteps } from '../ui/next-steps.ts';
 import { intro, log, outro } from '../ui/output.ts';
 import { step } from '../ui/project.ts';
-import { confirm, isInteractive, note, select, text } from '../ui/prompt.ts';
+import { confirm, isInteractive, select, text } from '../ui/prompt.ts';
 import { theme } from '../ui/theme.ts';
 import { CliError } from '../utils/errors.ts';
 import { binaryName } from './flags.ts';
@@ -206,17 +207,27 @@ export const createCommand: Command = {
 		}
 
 		const folder = relative(cwd, target) || '.';
-		note(
+		nextSteps(
 			[
-				theme.code(`cd ${folder}`),
-				names
-					? `Everything about ${names.name} is set up in ${theme.code('lib/main.dart')}.`
-					: `It is the Miata's, so give it your car's name, picture and the rest in ${theme.code('lib/main.dart')}.`,
-				`${theme.code(`${binaryName} run`)}  tries it on this computer`,
-				`${theme.code(`${binaryName} extension add <url>`)}  adds an extension`,
-				`${theme.code(`${binaryName} export installer`)}  puts it on a USB stick for the car`,
-			].join('\n'),
-			'Next',
+				{ kind: 'open-folder', text: theme.code(`cd ${folder}`), path: target },
+				{
+					kind: 'edit-main',
+					text: names
+						? `Everything about ${names.name} is set up in ${theme.code('lib/main.dart')}.`
+						: `It is the Miata's, so give it your car's name, picture and the rest in ${theme.code('lib/main.dart')}.`,
+					path: 'lib/main.dart',
+				},
+				{ kind: 'run', text: `${theme.code(`${binaryName} run`)}  tries it on this computer` },
+				{
+					kind: 'add-extension',
+					text: `${theme.code(`${binaryName} extension add <url>`)}  adds an extension`,
+				},
+				{
+					kind: 'export-installer',
+					text: `${theme.code(`${binaryName} export installer`)}  puts it on a USB stick for the car`,
+				},
+			],
+			{ numbered: false },
 		);
 		outro(`${theme.success(theme.strong(names?.name ?? 'The Miata app'))} is ready`);
 
