@@ -180,6 +180,57 @@ export function appendElement(source: string, code: string, open: number, elemen
 	return `${source.slice(0, last.end)}, ${element}${source.slice(last.end)}`;
 }
 
+/**
+ * Sets one named argument of a call: replaces its value when it is there, adds it when it
+ * is not.
+ *
+ * `call` matches the call up to and including its `(`, and has to match exactly once
+ * outside comments and strings. A new argument goes on lines of its own in front of the
+ * `before` argument, under `comment` and above that argument's own comment, or at the end
+ * when there is no such argument.
+ *
+ * Gives back undefined when the call cannot be found without doubt.
+ */
+export function setArgument(
+	source: string,
+	call: RegExp,
+	name: string,
+	value: string,
+	options: { before?: string; comment?: string[] } = {},
+): string | undefined {
+	const code = codeOnly(source);
+	const match = onlyMatch(code, call);
+	if (!match) return undefined;
+	const open = match.index + match[0].length - 1;
+	const close = closingBracket(code, open);
+	if (close === -1) return undefined;
+
+	const items = elements(code, open, close);
+	const named = (argument: string) =>
+		items.find((item) => new RegExp(`^${argument}\\s*:`).test(code.slice(item.start, item.end)));
+
+	const existing = named(name);
+	if (existing) {
+		return `${source.slice(0, existing.start)}${name}: ${value}${source.slice(existing.end)}`;
+	}
+
+	const anchor = options.before ? named(options.before) : undefined;
+	if (anchor && code.slice(lineStart(code, anchor.start), anchor.start).trim() === '') {
+		// Above the comment that belongs to the argument it goes in front of.
+		let at = lineStart(source, anchor.start);
+		while (at > 0) {
+			const above = lineStart(source, at - 1);
+			if (!source.slice(above, at).trim().startsWith('//')) break;
+			at = above;
+		}
+		const indent = indentAt(source, anchor.start);
+		const lines = [...(options.comment ?? []).map((line) => `// ${line}`), `${name}: ${value},`];
+		return `${source.slice(0, at)}${lines.map((line) => `${indent}${line}\n`).join('')}\n${source.slice(at)}`;
+	}
+
+	return appendElement(source, code, open, `${name}: ${value}`);
+}
+
 /** Adds the import, in order among the other package imports, unless it is already there. */
 function addImport(source: string, entry: ExtensionEntry): string {
 	return addImportLine(source, importLine(entry));

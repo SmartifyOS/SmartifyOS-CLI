@@ -16,6 +16,7 @@ export interface Pubspec {
 	description?: unknown;
 	dependencies?: Record<string, unknown> | null;
 	dependency_overrides?: Record<string, unknown> | null;
+	flutter?: unknown;
 }
 
 /** Where a package comes from, as a pubspec says it. */

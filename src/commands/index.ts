@@ -1,3 +1,4 @@
+import { createCommand } from './create.ts';
 import { deviceCommand } from './device/index.ts';
 import { exportCommand } from './export/index.ts';
 import { extensionCommand } from './extension/index.ts';
@@ -20,6 +21,7 @@ import { updateCommand } from './update.ts';
  * about all of them at once, which is what keeps the imports going one way.
  */
 register(
+	createCommand,
 	updateCommand,
 	extensionCommand,
 	runCommand,

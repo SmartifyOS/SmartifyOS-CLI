@@ -56,6 +56,10 @@ A car's `pubspec.yaml` names where SmartifyOS and every extension come from, und
 
 **Every change to what a car runs goes through `tryChange`** in `src/core/project/change.ts`. Pub never checks an extension's SmartifyOS lower bound (the override hides it), so fetching and analyzing, and putting every file back on errors, is the only check there is. It analyzes each extension's `lib` with the app's `package_config.json`: `flutter analyze` on the app alone never reports errors inside a dependency.
 
+## Creating a car
+
+`create` copies `smartify_os_app_template/` out of the SmartifyOS repo at the newest release, renames `my_car` and `My car`, and writes the owner's answers into its `lib/main.dart` as named arguments of the calls the template makes (`setUpMain` in `src/core/project/create.ts`). An answer whose call is not found is printed for the owner to add, never a failure. The layouts it offers are a copy of `Layouts` in core, so a new built-in layout is a change here too. `--from miata` copies the Miata app as it is, only its pubspec is pointed at SmartifyOS.
+
 ## What runs on the car
 
 `export installer` and `export update` put a `smartify-os` folder on a USB stick (layout in `src/core/export/export.ts`). What runs on the car is shell, in `src/core/linux/scripts/`, embedded in the binary as text. **`linux.sh` is the one step** every install, build on a car, build for a car and (later) update on the car runs, so there is never a second way of doing it. It installs a package set as one generated `.deb`, stateless every time. The CLI checks and merges the lists, the script only carries them out.

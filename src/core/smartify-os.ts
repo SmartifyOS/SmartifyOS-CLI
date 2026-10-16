@@ -14,8 +14,8 @@ import { parsePubspec } from './pubspec/read.ts';
  * Where SmartifyOS itself comes from.
  *
  * Every release is a `vX.Y.Z` tag of one repository, with the package in its
- * `smartify_os_core` folder and the template for new extensions next to it, so that the
- * template handed out always matches the SmartifyOS it was released with.
+ * `smartify_os_core` folder and the templates for new extensions and new cars next to it,
+ * so that a template handed out always matches the SmartifyOS it was released with.
  */
 
 /** The package name every car and every extension depends on. */
@@ -26,6 +26,12 @@ export const coreFolder = 'smartify_os_core';
 
 /** The folder of the repository the extension template is in. */
 export const templateFolder = 'smartify_os_extension_template';
+
+/** The folder of the repository the template for a new car's app is in. */
+export const appTemplateFolder = 'smartify_os_app_template';
+
+/** The folder of the repository the Miata app is in, the example car with everything in it. */
+export const miataFolder = 'smartify_os_miata_app';
 
 /**
  * The SmartifyOS repository. `SMARTIFY_OS_CORE_REPO` points somewhere else, for trying a

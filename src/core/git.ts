@@ -215,3 +215,20 @@ export async function branchCommit(url: string, branch: string): Promise<string 
 	if (result.code !== 0) throw unreachable(url, result.stderr);
 	return /^([0-9a-f]{40})\s/m.exec(result.stdout)?.[1];
 }
+
+/**
+ * Makes a new folder a git repository on `main`, with everything in it as the first commit.
+ * False when git would not commit, for example with no name set up for commits.
+ */
+export async function commitFirst(dir: string, message: string): Promise<boolean> {
+	const steps = [
+		['init', '--quiet'],
+		['symbolic-ref', 'HEAD', 'refs/heads/main'],
+		['add', '--all'],
+		['commit', '--quiet', '--message', message],
+	];
+	for (const args of steps) {
+		if ((await run('git', args, { cwd: dir })).code !== 0) return false;
+	}
+	return true;
+}

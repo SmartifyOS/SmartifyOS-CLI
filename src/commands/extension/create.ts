@@ -10,7 +10,7 @@ import {
 	finishPubspec,
 	removeFolder,
 } from '../../core/extension/create.ts';
-import { withClone } from '../../core/git.ts';
+import { commitFirst, withClone } from '../../core/git.ts';
 import { run, runOrThrow } from '../../core/process.ts';
 import { readCar } from '../../core/project/car.ts';
 import { findProject } from '../../core/project/find.ts';
@@ -134,7 +134,9 @@ export const extensionCreateCommand: Command = {
 			() => 'Its tests pass',
 		);
 
-		const committed = await step('Making it a git repository', () => commitFirst(target, names));
+		const committed = await step('Making it a git repository', () =>
+			commitFirst(target, `Create ${names.name} from the SmartifyOS template`),
+		);
 		if (!committed) {
 			log.warn('It could not be committed, so it has no history yet. Everything else is ready.');
 		}
@@ -288,18 +290,4 @@ async function fetchPackages(target: string): Promise<void> {
 		{ message: 'Its texts could not be generated.' },
 		{ cwd: target },
 	);
-}
-
-/** Internal: `git init` and the first commit. False when git would not commit. */
-async function commitFirst(target: string, names: ExtensionNames): Promise<boolean> {
-	const steps = [
-		['init', '--quiet'],
-		['symbolic-ref', 'HEAD', 'refs/heads/main'],
-		['add', '--all'],
-		['commit', '--quiet', '--message', `Create ${names.name} from the SmartifyOS template`],
-	];
-	for (const args of steps) {
-		if ((await run('git', args, { cwd: target })).code !== 0) return false;
-	}
-	return true;
 }

@@ -5,7 +5,7 @@ The command line tool for [SmartifyOS](https://smartify-os.com/), the open sourc
 It does the complicated parts for you. You should never have to touch `flutter`, `git` or `adb` to build a system for your car.
 
 > [!NOTE]
-> This is early days. The tool keeps your car's SmartifyOS and extensions up to date, puts it on a USB stick for your car, helps you make your own extensions, and keeps itself up to date. Setting up the car's system itself (starting SmartifyOS when the car starts, and the rest) is still on its way.
+> This is early days. The tool creates your car's app, keeps its SmartifyOS and extensions up to date, puts it on a USB stick that sets up your car, helps you make your own extensions, and keeps itself up to date.
 
 ## Install
 
@@ -39,6 +39,22 @@ Set these before running the installer if you want something other than the defa
 | `SMARTIFY_OS_INSTALL_DIR`    | Install somewhere other than `~/.smartify-os/bin`                       |
 | `SMARTIFY_OS_NO_MODIFY_PATH` | Leave your shell config alone                                           |
 | `SMARTIFY_OS_BASE_URL`       | Download from a mirror instead of GitHub                                |
+
+## Starting your car
+
+```bash
+smartify-os create
+```
+
+It asks what your car is called, what car it is, how the screen should be laid out, which side the driver sits on, what goes in the bar along the edge, which time zone the car is in, whether you have a 3D model, a drawing or a picture of the car, and whether it has a reverse camera. Then it makes your car's app: a folder called `smartify_os_<name>_app`, made for the newest SmartifyOS, with your answers in `lib/main.dart`, where you can change them any time. It checks that the app builds and makes it a git repository, so it is ready to put on GitHub.
+
+Every question can be answered with a flag instead, `smartify-os create --help` lists them:
+
+```bash
+smartify-os create "Golf 4" --car "Volkswagen Golf IV" --layout split --driver-side right
+```
+
+`smartify-os create --from miata` copies the Miata app instead, the example car with everything in it, to learn from. It is copied as it is, so you give it your car's name and the rest in its `lib/main.dart` yourself.
 
 ## Your car
 

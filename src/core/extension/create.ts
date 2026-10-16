@@ -1,11 +1,11 @@
-import { mkdir, readdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { rm } from 'node:fs/promises';
 import { CliError } from '../../utils/errors.ts';
 import { addPlatforms } from '../flutter.ts';
 import type { GitSource } from '../git.ts';
 import { gitEntry, pathEntry } from '../project/block.ts';
 import { setEntry } from '../pubspec/blocks.ts';
 import { corePackage, type NeededOverride } from '../smartify-os.ts';
+import { copyFolder } from '../template.ts';
 
 /**
  * Turning SmartifyOS's extension template into someone's own extension.
@@ -84,39 +84,12 @@ export function renameText(text: string, names: ExtensionNames): string {
 	return result;
 }
 
-/** What is never copied out of the template: what a machine made, not what the template is. */
-const leftOut = new Set([
-	'pubspec_overrides.yaml',
-	'pubspec.lock',
-	'.dart_tool',
-	'build',
-	'.DS_Store',
-	'.git',
-]);
-
 /**
  * Copies the template into a new folder, renaming every spelling of its name in every file,
  * and in every file and folder name.
  */
 export async function copyTemplate(from: string, to: string, names: ExtensionNames): Promise<void> {
-	await mkdir(to, { recursive: true });
-
-	for (const entry of await readdir(from, { withFileTypes: true })) {
-		if (leftOut.has(entry.name)) continue;
-		const source = join(from, entry.name);
-		const target = join(to, renameText(entry.name, names));
-
-		if (entry.isDirectory()) {
-			await copyTemplate(source, target, names);
-			continue;
-		}
-
-		const bytes = new Uint8Array(await Bun.file(source).arrayBuffer());
-		// Every file in the template is text. Should that ever change, a binary file is
-		// copied as it is rather than mangled.
-		if (bytes.includes(0)) await Bun.write(target, bytes);
-		else await Bun.write(target, renameText(new TextDecoder().decode(bytes), names));
-	}
+	await copyFolder(from, to, (text) => renameText(text, names));
 }
 
 /**
