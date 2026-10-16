@@ -91,6 +91,7 @@ bun run build             # one binary for this machine, then runs it
 bun run build:all         # all eight published targets
 bun run install:dev       # put smartify-os on your PATH, running live from src
 bun run install:local     # same, but the real compiled binary
+bun run release           # cut a release (scripts/release.ts), --dry-run to only look
 ```
 
 **`bun run check` is the safety net, not GitHub.** CI only runs on pull requests, so nothing checks a push to main. The check takes about two seconds and reports every failure at once instead of stopping at the first, so there is no reason to skip it.
@@ -109,7 +110,7 @@ Bun's musl binaries link against `libstdc++`, which Alpine does not ship. `insta
 
 `__BUILD_TARGET__` is injected the same way `__BUILD_SHA__` is, so `self-update` knows which of the eight builds to download without having to guess. Guessing gets glibc and musl the wrong way round, and that binary does not start at all. Anything else added to `define` needs a declaration in `globals.d.ts` and a `typeof x === 'string'` fallback for running from source.
 
-Releases are cut by pushing a `v*` tag that matches the version in package.json. The release workflow runs lint, typecheck and tests first and stops if any of them fail, then builds every target, signs the macOS ones on a Mac, publishes them, and installs the result on Linux, macOS, Windows and Alpine to prove the install scripts still work.
+Releases are cut with `bun run release` and nothing else. It checks the repo (on main, nothing uncommitted, up to date, `bun run check` passing), asks for the version and an optional summary, bumps package.json in a `chore: release vX` commit, and pushes a `vX` tag whose message is the release notes: the `feat:`, `fix:` and `refactor:` commits since the last tag. The release workflow publishes that message as the notes. The same script is in SmartifyOS-Editor; keep the two alike. The release workflow runs lint, typecheck and tests first and stops if any of them fail, then builds every target, signs the macOS ones on a Mac, publishes them, and installs the result on Linux, macOS, Windows and Alpine to prove the install scripts still work.
 
 ## Keeping this file useful
 

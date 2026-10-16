@@ -153,14 +153,25 @@ jobs:
           sha256sum *.tar.gz *.zip > checksums.txt
           cat checksums.txt
 
+      # The notes are the tag's message, written by `bun run release` (scripts/release.ts).
+      # Fetched again on purpose, since checkout can leave an annotated tag without its
+      # message.
+      - name: Read the release notes
+        env:
+          TAG: ${{ needs.check-version.outputs.tag }}
+        run: |
+          git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG"
+          git tag --list --format='%(contents)' "$TAG" > notes.md
+          cat notes.md
+
       - name: Create the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.check-version.outputs.tag }}
         run: |
-          gh release create "${{ needs.check-version.outputs.tag }}" \
-            --title "${{ needs.check-version.outputs.tag }}" \
-            --generate-notes \
-            release/*
+          # A tag made by hand has no notes, GitHub's own list then stands in for them.
+          if [ -s notes.md ]; then notes=(--notes-file notes.md); else notes=(--generate-notes); fi
+          gh release create "$TAG" --title "$TAG" "${notes[@]}" release/*
 
   # Runs the install scripts exactly as a user would, against the release that was just
   # published. This is the only place install.ps1 gets properly exercised.

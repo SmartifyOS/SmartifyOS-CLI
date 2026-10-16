@@ -221,6 +221,7 @@ bun install
 | `bun run build:all`     | Build all eight published targets            |
 | `bun run install:dev`   | Put `smartify-os` on your PATH, running live from source with no rebuild |
 | `bun run install:local` | Same, but installs the real compiled binary  |
+| `bun run release`       | Cut a release, for the maintainer. It asks for the version and a summary, writes the release notes from the commits and does the rest. `--dry-run` only shows it |
 
 Set `SMARTIFY_OS_CORE_REPO` to another SmartifyOS repository, for example a local one as `file:///path/to/repo`, to try the car and extension commands against releases that are not published.
 
