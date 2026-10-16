@@ -21,7 +21,7 @@
 #       Builds the car's app for Linux, and prints the folder of the finished build.
 #   linux.sh system
 #       Sets the car up to start straight into SmartifyOS, as the user in
-#       /etc/smartify-os/car.conf: its service, passwordless sudo, a quiet start.
+#       /etc/smartify-os/car.conf: its service, passwordless sudo, its groups, a quiet start.
 #
 # It never asks anything. Installing needs root, or sudo that asks for no password.
 
@@ -761,6 +761,22 @@ polkit.addRule(function (action, subject) {
 EOF
 }
 
+# The groups the car's user needs whatever the car's app is. A USB camera is root:video, mode
+# 660: a desktop login gets it through logind's seat ACL, but whether a service on tty1 does
+# is not certain, and the group works either way, with no udev rule. Never taken away.
+system_groups() {
+	local user=$1 group
+	for group in video; do
+		if [ -n "$sysroot" ]; then
+			groupadd --root "$sysroot" -f "$group"
+			usermod --root "$sysroot" -aG "$group" "$user"
+		else
+			groupadd -f "$group"
+			usermod -aG "$group" "$user"
+		fi
+	done
+}
+
 # The login session the service opens on tty1, the way a login screen would, which is what
 # gives SmartifyOS the screen, touch and sound, and its language from /etc/default/locale.
 system_pam() {
@@ -1084,6 +1100,8 @@ cmd_system() {
 	system_sudo "$user"
 	step 'Letting SmartifyOS open USB sticks'
 	system_polkit "$user"
+	step 'Letting SmartifyOS use the reverse camera'
+	system_groups "$user"
 	step 'Starting SmartifyOS with the car, full screen and without a cursor'
 	system_pam
 	system_labwc

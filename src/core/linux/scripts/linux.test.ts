@@ -386,6 +386,14 @@ describe('linux.sh system', () => {
 		expect(rule).toContain('org.freedesktop.udisks2.filesystem-mount');
 	});
 
+	test('puts the user in the video group, for the reverse camera', async () => {
+		await car();
+		expect(setUpSystem().code).toBe(0);
+		const log = await read('log');
+		expect(log).toContain(`groupadd --root ${sysroot} -f video`);
+		expect(log).toContain(`usermod --root ${sysroot} -aG video pi`);
+	});
+
 	test('leaves the sudo rule out when visudo finds it broken, since that would break sudo', async () => {
 		await car();
 		const { code, stderr } = setUpSystem({ FAKE_VISUDO: '1' });
