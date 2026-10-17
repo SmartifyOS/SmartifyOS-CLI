@@ -242,6 +242,11 @@ While `run` runs the car's app, `call` reaches SmartifyOS inside it, with `param
 | ----------- | -------------------------------------------------------------------------------- |
 | `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, and the `about` page |
 | `configure` | Changes what the car starts with, any of `layout`, `theme`, `driverSide`, `bar` (`infoDisplay`, `dock`, `infoDisplayAndDock`), `carLook` (`model3D`, `drawing2D`, `image`), `deviceName`, `model` and `extra` (an object). An empty string goes back to SmartifyOS's own. The driver's own pick of the same thing is forgotten, and the reply is the same as `describe`. It does not change `lib/main.dart`, `appearance` and `about` do that |
+| `screenshot` | What is on screen, as a `png` in base64 with its `width` and `height` |
+| `canDescribe` | The car's CAN bus: its `devices` (`node`, `name`, `title`, whether it is `online`, and whether it is `pretending` for you) and `messages` (`id`, `name`, the `from` node that sends it, and its `fields` with their `kind` and limits) |
+| `canSend` | Takes a message as if its device had sent it: `message` by name and `values` as an object by field name, choices by their names |
+| `canDevice` | Makes the device with `node` say it is there, once a second, or stop with `there` set to `false` |
+| `canTraffic` | What the app sent on the bus after number `after`, each of its `frames` with its `seq`, `message` and `values`, and the number the `next` one gets, which is lower than `after` once the app started again |
 
 When stdin ends while a question is open, the command fails and puts the question in `error.details.prompt`, so a program that answered nothing learns what it has to pass as a flag. `--yes` skips every question that has a sensible answer already.
 
