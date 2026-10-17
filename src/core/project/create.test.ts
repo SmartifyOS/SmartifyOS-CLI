@@ -166,7 +166,12 @@ describe('renameCarText', () => {
 
 describe('dartString', () => {
 	test('escapes what Dart reads differently', () => {
-		expect(dartString("O'Brien's $5 \\")).toBe("'O\\'Brien\\'s \\$5 \\\\'");
+		expect(dartString('Cost $5 \\')).toBe("'Cost \\$5 \\\\'");
+		expect(dartString(`It's "fast"`)).toBe("'It\\'s \"fast\"'");
+	});
+
+	test('takes double quotes for an apostrophe, so it needs no backslash', () => {
+		expect(dartString("O'Brien's $5")).toBe('"O\'Brien\'s \\$5"');
 	});
 });
 
@@ -243,7 +248,7 @@ describe('setUpMain', () => {
 		expect(source).toContain('content: BarContent.infoDisplayAndDock(),');
 		expect(source).toContain("DateTimeConfig(timeZone: 'Asia/Tokyo')");
 		expect(source).toContain(
-			"AboutConfig(deviceName: 'My car', model: 'Mazda MX-5 NB 1.8 \\'Sport\\'')",
+			"AboutConfig(deviceName: 'My car', model: \"Mazda MX-5 NB 1.8 'Sport'\")",
 		);
 		expect(source).toContain(
 			"car: const CarConfig(model3D: CarModel3DConfig(path: 'assets/miata_model.glb'), image: CarImageConfig(path: 'assets/miata.png')),",

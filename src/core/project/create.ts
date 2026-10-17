@@ -142,9 +142,14 @@ export function isTimeZone(name: string): boolean {
 	}
 }
 
-/** A string as a Dart literal. */
+/**
+ * A string as a Dart literal, in double quotes when that saves escaping an apostrophe:
+ * `"Driver's seat"`, the way `dart format` users write it.
+ */
 export function dartString(value: string): string {
-	return `'${value.replace(/[\\'$]/g, (char) => `\\${char}`)}'`;
+	const quote = value.includes("'") && !value.includes('"') ? '"' : "'";
+	const special = quote === '"' ? /[\\"$]/g : /[\\'$]/g;
+	return `${quote}${value.replace(special, (char) => `\\${char}`)}${quote}`;
 }
 
 /** Internal: the calls of the template's `lib/main.dart` the answers go into. */

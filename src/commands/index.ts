@@ -11,6 +11,7 @@ import { tileCommand, widgetCommand, windowCommand } from './parts.ts';
 import { register } from './registry.ts';
 import { runCommand } from './run.ts';
 import { selfUpdateCommand } from './self-update.ts';
+import { settingsCommand } from './settings.ts';
 import { setupCommand } from './setup.ts';
 import { unlinkCommand } from './unlink.ts';
 import { updateCommand } from './update.ts';
@@ -36,6 +37,7 @@ register(
 	windowCommand,
 	tileCommand,
 	widgetCommand,
+	settingsCommand,
 	exportCommand,
 	deviceCommand,
 	linkCommand,

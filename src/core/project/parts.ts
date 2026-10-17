@@ -80,8 +80,23 @@ interface KindSpec {
 	icon: string;
 	/** The ids SmartifyOS's own parts of this kind have, which a new one must not take. */
 	builtIn: string[];
-	/** Where it is handed to SmartifyOS: `SmartifyOs().init(appList: AppListConfig(entries: [...]))`. */
-	register: { argument: string; config: string; list: string; import: string; comment: string };
+	register: RegisterSpec;
+}
+
+/**
+ * Where something the CLI makes is handed to SmartifyOS:
+ * `SmartifyOs().init(appList: AppListConfig(entries: [...]))`.
+ */
+export interface RegisterSpec {
+	/** The argument of `SmartifyOs().init`: `appList`. */
+	argument: string;
+	config: string;
+	/** The list argument of the config: `entries`. */
+	list: string;
+	/** The import the config needs. */
+	import: string;
+	/** Said above the config when it is added. */
+	comment: string;
 }
 
 export const kinds: Record<PartKind, KindSpec> = {
@@ -465,8 +480,8 @@ async function mainSource(appDir: string): Promise<string> {
 	return (await file.exists()) ? await file.text() : '';
 }
 
-/** Internal: the app's package name, which its own imports start with. */
-async function packageName(appDir: string): Promise<string> {
+/** The app's package name, which its own imports start with. */
+export async function packageName(appDir: string): Promise<string> {
 	const pubspec = await Bun.file(join(appDir, 'pubspec.yaml')).text();
 	const name = /^name:\s*([A-Za-z_][\w]*)/m.exec(pubspec)?.[1];
 	if (!name) throw new CliError("Your car's app has no name in its pubspec.yaml.");
@@ -480,7 +495,19 @@ const initCall = /\bSmartifyOs\s*\(\s*\)\s*\.\s*init\s*\(/;
  * config when it is not there. Undefined when there is no clear place for it.
  */
 export function register(source: string, kind: PartKind, element: string): string | undefined {
-	const { config, list, argument, comment } = kinds[kind].register;
+	return registerIn(source, kinds[kind].register, element);
+}
+
+/**
+ * Puts `element` into the list `spec` names, adding the config when it is not there.
+ * Undefined when there is no clear place for it.
+ */
+export function registerIn(
+	source: string,
+	spec: RegisterSpec,
+	element: string,
+): string | undefined {
+	const { config, list, argument, comment } = spec;
 	const configCall = new RegExp(`\\b${config}\\s*\\(`);
 	const code = codeOnly(source);
 	const match = onlyMatch(code, configCall);
@@ -514,7 +541,7 @@ export function register(source: string, kind: PartKind, element: string): strin
 		}
 	}
 	if (edited === undefined) return undefined;
-	// A window or a widget is never const, so the list and the config around it cannot be.
+	// What goes in is never const, so the list and the config around it cannot be.
 	return edited
 		.replace(new RegExp(`\\bconst\\s+(${config}\\s*\\()`), '$1')
 		.replace(new RegExp(`(\\b${list}\\s*:\\s*)const\\s+\\[`), '$1[');
@@ -522,7 +549,12 @@ export function register(source: string, kind: PartKind, element: string): strin
 
 /** Internal: takes `symbol` out of the list its kind is handed to SmartifyOS in. */
 export function unregister(source: string, kind: PartKind, symbol: string): string {
-	const { config, list } = kinds[kind].register;
+	return unregisterIn(source, kinds[kind].register, symbol);
+}
+
+/** Takes `symbol` out of the list `spec` names. */
+export function unregisterIn(source: string, spec: RegisterSpec, symbol: string): string {
+	const { config, list } = spec;
 	const code = codeOnly(source);
 	const match = onlyMatch(code, new RegExp(`\\b${config}\\s*\\(`));
 	if (!match) return source;

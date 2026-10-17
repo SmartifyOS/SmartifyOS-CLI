@@ -108,7 +108,11 @@ export function closingBracket(code: string, open: number): number {
 }
 
 /** Internal: where each element of a bracketed list starts and ends, commas left out. */
-function elements(code: string, open: number, close: number): { start: number; end: number }[] {
+export function elements(
+	code: string,
+	open: number,
+	close: number,
+): { start: number; end: number }[] {
 	const found: { start: number; end: number }[] = [];
 	let depth = 0;
 	let start = open + 1;

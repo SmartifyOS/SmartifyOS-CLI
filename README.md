@@ -119,6 +119,17 @@ smartify-os window edit "Trip computer" --icon speed
 smartify-os window remove "Trip computer"
 ```
 
+Settings pages of your own are made the same way, a row at a time. A switch or a choice keeps its value between drives, and the rest of your app reads it as `seatHeatingDriverSeat.value`. A button, or a switch you want to do something, runs a function of yours that starts out in the page's file:
+
+```bash
+smartify-os settings create "Seat heating" --in vehicle
+smartify-os settings add-row "Seat heating" "Driver seat" --kind switch
+smartify-os settings add-row "Seat heating" Level --kind choice --option Low --option High
+smartify-os settings add-row "Seat heating" "Reset trip" --kind button
+smartify-os settings edit-row "Seat heating" driver_seat --code on
+smartify-os settings list
+```
+
 ## Putting it on your car
 
 SmartifyOS goes onto the car on a USB stick. Run these in your car's app folder too.
@@ -251,10 +262,10 @@ While `run` runs the car's app, `call` reaches SmartifyOS inside it, with `param
 
 | Call        | What it does                                                                     |
 | ----------- | -------------------------------------------------------------------------------- |
-| `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, and the `about` page |
+| `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, the `about` page, and every page of Settings a page of its own can go in (`settingsPages`) |
 | `configure` | Changes what the car starts with, any of `layout`, `theme`, `driverSide`, `bar` (`infoDisplay`, `dock`, `infoDisplayAndDock`), `carLook` (`model3D`, `drawing2D`, `image`), `deviceName`, `model` and `extra` (an object). An empty string goes back to SmartifyOS's own. The driver's own pick of the same thing is forgotten, and the reply is the same as `describe`. It does not change `lib/main.dart`, `appearance` and `about` do that |
 | `screenshot` | What is on screen, as a `png` in base64 with its `width` and `height` |
-| `show`      | Puts something on screen the way the driver finds it: `kind` (`window`, `tile` or `widget`) with its `id`. A window opens, the quick settings come down, a card comes back |
+| `show`      | Puts something on screen the way the driver finds it: `kind` (`window`, `tile`, `widget` or `settings`) with its `id`. A window opens, the quick settings come down, a card comes back, a settings page opens |
 | `canDescribe` | The car's CAN bus: its `devices` (`node`, `name`, `title`, whether it is `online`, and whether it is `pretending` for you) and `messages` (`id`, `name`, the `from` node that sends it, and its `fields` with their `kind` and limits) |
 | `canSend` | Takes a message as if its device had sent it: `message` by name and `values` as an object by field name, choices by their names |
 | `canDevice` | Makes the device with `node` say it is there, once a second, or stop with `there` set to `false` |

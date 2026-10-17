@@ -60,6 +60,8 @@ A car's `pubspec.yaml` names where SmartifyOS and every extension come from, und
 
 **Windows, quick settings tiles and home screen widgets** (`window`, `tile`, `widget`) are each a file the CLI writes in a folder of its kind (`lib/windows/`, `lib/quick_settings/`, `lib/home_widgets/`), handed to SmartifyOS in a list in `lib/main.dart`, all in `src/core/project/parts.ts`. It reads them back, renames them and changes their icon by the shape it wrote them in, so a change to the templates there has to keep `readPart` reading them. The icons offered are a copy in the editor (`src/lib/parts.ts`), drawn there with the closest Lucide icon.
 
+**Settings pages** (`settings`) are files in `lib/settings/`, read and changed by `src/core/project/settings.ts` one row at a time: each row is an element of the page's `entries` list, edited in place, so code the owner wrote inside a row or anywhere else in the file stays. A row that remembers its value gets a `SavedValue` declared further down, named after the page and row, and one that runs code gets a stub function. Taking either away again only deletes the stub if the owner wrote nothing in it, and the `SavedValue` if no other file reads it.
+
 **The running app** is reached while `run --json` runs it: `{"call": ...}` on stdin goes to the Dart VM service `flutter run` prints (`src/core/vm-service.ts`), to the service extensions SmartifyOS registers in a debug build (`EditorBridge` in core), and every call gets a `reply` event. That is how the editor changes the app live.
 
 ## Creating a car
