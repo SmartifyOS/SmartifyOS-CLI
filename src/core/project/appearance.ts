@@ -1,7 +1,7 @@
 import { basename, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { run } from '../process.ts';
 import { withAssets } from '../pubspec/assets.ts';
 import { type BarChoice, type CarLooks, type DriverSide, dartString, layouts } from './create.ts';
+import { writeDart } from './dart-file.ts';
 import { addImportLine, argumentValue, removeArgument, setArgument } from './main-dart.ts';
 
 /**
@@ -471,11 +471,7 @@ export async function changeAppearance(
 
 	const before = await Bun.file(mainPath).text();
 	const { source, manual } = setAppearance(before, placed);
-	if (source !== before) {
-		const formatted = await isFormatted(mainPath);
-		await Bun.write(mainPath, source);
-		if (formatted) await run('dart', ['format', mainPath]);
-	}
+	await writeDart(mainPath, before, source);
 	const after = await Bun.file(mainPath).text();
 
 	return {
@@ -485,15 +481,4 @@ export async function changeAppearance(
 		assets,
 		restart: carLooks.some((look) => change[look] !== undefined),
 	};
-}
-
-/** Internal: whether `dart format` would leave a file as it is. */
-async function isFormatted(path: string): Promise<boolean> {
-	try {
-		const result = await run('dart', ['format', '--output=none', '--set-exit-if-changed', path]);
-		return result.code === 0;
-	} catch {
-		// No Dart to ask, so nothing to format with afterwards either.
-		return false;
-	}
 }

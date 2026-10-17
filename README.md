@@ -108,6 +108,17 @@ smartify-os about --extra "VIN=WVWZZZ1JZXW000001"
 
 Both write into `lib/main.dart` the way you would by hand, and leave alone anything you wrote there that they cannot read. A 3D model, drawing or picture is copied into your app's `assets` folder.
 
+Your own windows, quick settings tiles and home screen widgets each start as a file the CLI makes for you, already handed to SmartifyOS in `lib/main.dart`. You only fill in what it shows or does:
+
+```bash
+smartify-os window create "Trip computer"     # a window, with its icon in the app list
+smartify-os tile create "Interior light"      # a switch or button in the quick settings
+smartify-os widget create "Oil temperature"   # a card or widget on the home screen
+smartify-os window list                       # the ones your app has
+smartify-os window edit "Trip computer" --icon speed
+smartify-os window remove "Trip computer"
+```
+
 ## Putting it on your car
 
 SmartifyOS goes onto the car on a USB stick. Run these in your car's app folder too.
@@ -243,6 +254,7 @@ While `run` runs the car's app, `call` reaches SmartifyOS inside it, with `param
 | `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, and the `about` page |
 | `configure` | Changes what the car starts with, any of `layout`, `theme`, `driverSide`, `bar` (`infoDisplay`, `dock`, `infoDisplayAndDock`), `carLook` (`model3D`, `drawing2D`, `image`), `deviceName`, `model` and `extra` (an object). An empty string goes back to SmartifyOS's own. The driver's own pick of the same thing is forgotten, and the reply is the same as `describe`. It does not change `lib/main.dart`, `appearance` and `about` do that |
 | `screenshot` | What is on screen, as a `png` in base64 with its `width` and `height` |
+| `show`      | Puts something on screen the way the driver finds it: `kind` (`window`, `tile` or `widget`) with its `id`. A window opens, the quick settings come down, a card comes back |
 | `canDescribe` | The car's CAN bus: its `devices` (`node`, `name`, `title`, whether it is `online`, and whether it is `pretending` for you) and `messages` (`id`, `name`, the `from` node that sends it, and its `fields` with their `kind` and limits) |
 | `canSend` | Takes a message as if its device had sent it: `message` by name and `values` as an object by field name, choices by their names |
 | `canDevice` | Makes the device with `node` say it is there, once a second, or stop with `there` set to `false` |

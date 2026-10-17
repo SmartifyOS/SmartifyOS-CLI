@@ -58,6 +58,8 @@ A car's `pubspec.yaml` names where SmartifyOS and every extension come from, und
 
 **How a car looks and its About page** (`appearance`, `about`) are arguments in `lib/main.dart` too, read and written by `src/core/project/appearance.ts`. A setting written as code the CLI cannot read is reported in `code` and never guessed at, a config that is missing is added where nothing is in the way, and a commented out example of an argument (`// look: CarLook.drawing2D,`) is uncommented rather than repeated. `lib/main.dart` is run through `dart format` afterwards only when it was formatted before.
 
+**Windows, quick settings tiles and home screen widgets** (`window`, `tile`, `widget`) are each a file the CLI writes in a folder of its kind (`lib/windows/`, `lib/quick_settings/`, `lib/home_widgets/`), handed to SmartifyOS in a list in `lib/main.dart`, all in `src/core/project/parts.ts`. It reads them back, renames them and changes their icon by the shape it wrote them in, so a change to the templates there has to keep `readPart` reading them. The icons offered are a copy in the editor (`src/lib/parts.ts`), drawn there with the closest Lucide icon.
+
 **The running app** is reached while `run --json` runs it: `{"call": ...}` on stdin goes to the Dart VM service `flutter run` prints (`src/core/vm-service.ts`), to the service extensions SmartifyOS registers in a debug build (`EditorBridge` in core), and every call gets a `reply` event. That is how the editor changes the app live.
 
 ## Creating a car

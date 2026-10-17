@@ -432,6 +432,46 @@ export function switchOn(source: string, entry: ExtensionEntry): string | undefi
 }
 
 /**
+ * Takes the first element `matches` accepts out of the bracketed list that opens at `open`,
+ * with its comma, and the whole line when it stood on one of its own. Gives back the source
+ * unchanged when no element matches.
+ */
+export function removeElement(
+	source: string,
+	code: string,
+	open: number,
+	matches: (text: string) => boolean,
+): string {
+	const close = closingBracket(code, open);
+	const items = elements(code, open, close);
+	const index = items.findIndex((item) => matches(code.slice(item.start, item.end)));
+	const item = items[index];
+	if (!item) return source;
+
+	let from = item.start;
+	let to = item.end;
+	const after = code.slice(to, close);
+	const comma = /^\s*,/.exec(after);
+	if (comma) to += comma[0].length;
+
+	const ownLine =
+		code.slice(lineStart(code, from), from).trim() === '' && /^[ \t]*(\n|$)/.test(code.slice(to));
+	if (ownLine) {
+		from = lineStart(source, from);
+		const newline = source.indexOf('\n', to);
+		to = newline === -1 ? source.length : newline + 1;
+	} else if (!comma && index > 0) {
+		// The last one on a single line: the comma to take is the one in front of it.
+		const previous = items[index - 1];
+		if (previous) from = previous.end;
+	} else if (comma) {
+		to += (/^[ \t]*/.exec(code.slice(to))?.[0] ?? '').length;
+	}
+
+	return `${source.slice(0, from)}${source.slice(to)}`;
+}
+
+/**
  * Switches an extension off: takes its element out of `extensions: [...]`, and every import
  * of its package.
  *
@@ -445,37 +485,7 @@ export function switchOff(source: string, entry: ExtensionEntry): string | undef
 
 	if (list) {
 		const open = list.index + list[0].length - 1;
-		const close = closingBracket(code, open);
-		const items = elements(code, open, close);
-		const index = items.findIndex((item) =>
-			isEntryElement(code.slice(item.start, item.end), entry),
-		);
-		const item = items[index];
-
-		if (item) {
-			let from = item.start;
-			let to = item.end;
-			const after = code.slice(to, close);
-			const comma = /^\s*,/.exec(after);
-			if (comma) to += comma[0].length;
-
-			const ownLine =
-				code.slice(lineStart(code, from), from).trim() === '' &&
-				/^[ \t]*(\n|$)/.test(code.slice(to));
-			if (ownLine) {
-				from = lineStart(source, from);
-				const newline = source.indexOf('\n', to);
-				to = newline === -1 ? source.length : newline + 1;
-			} else if (!comma && index > 0) {
-				// The last one on a single line: the comma to take is the one in front of it.
-				const previous = items[index - 1];
-				if (previous) from = previous.end;
-			} else if (comma) {
-				to += (/^[ \t]*/.exec(code.slice(to))?.[0] ?? '').length;
-			}
-
-			result = `${source.slice(0, from)}${source.slice(to)}`;
-		}
+		result = removeElement(source, code, open, (text) => isEntryElement(text, entry));
 	}
 
 	const importPattern = new RegExp(

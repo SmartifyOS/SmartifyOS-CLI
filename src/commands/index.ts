@@ -7,6 +7,7 @@ import { exportCommand } from './export/index.ts';
 import { extensionCommand } from './extension/index.ts';
 import { helpCommand } from './help.ts';
 import { linkCommand } from './link.ts';
+import { tileCommand, widgetCommand, windowCommand } from './parts.ts';
 import { register } from './registry.ts';
 import { runCommand } from './run.ts';
 import { selfUpdateCommand } from './self-update.ts';
@@ -32,6 +33,9 @@ register(
 	runCommand,
 	appearanceCommand,
 	aboutCommand,
+	windowCommand,
+	tileCommand,
+	widgetCommand,
 	exportCommand,
 	deviceCommand,
 	linkCommand,
