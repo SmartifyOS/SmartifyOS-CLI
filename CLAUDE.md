@@ -56,6 +56,10 @@ A car's `pubspec.yaml` names where SmartifyOS and every extension come from, und
 
 **Every change to what a car runs goes through `tryChange`** in `src/core/project/change.ts`. Pub never checks an extension's SmartifyOS lower bound (the override hides it), so fetching and analyzing, and putting every file back on errors, is the only check there is. It analyzes each extension's `lib` with the app's `package_config.json`: `flutter analyze` on the app alone never reports errors inside a dependency.
 
+**How a car looks and its About page** (`appearance`, `about`) are arguments in `lib/main.dart` too, read and written by `src/core/project/appearance.ts`. A setting written as code the CLI cannot read is reported in `code` and never guessed at, a config that is missing is added where nothing is in the way, and a commented out example of an argument (`// look: CarLook.drawing2D,`) is uncommented rather than repeated. `lib/main.dart` is run through `dart format` afterwards only when it was formatted before.
+
+**The running app** is reached while `run --json` runs it: `{"call": ...}` on stdin goes to the Dart VM service `flutter run` prints (`src/core/vm-service.ts`), to the service extensions SmartifyOS registers in a debug build (`EditorBridge` in core), and every call gets a `reply` event. That is how the editor changes the app live.
+
 ## Creating a car
 
 `create` copies `smartify_os_app_template/` out of the SmartifyOS repo at the newest release, renames `my_car` and `My car`, and writes the owner's answers into its `lib/main.dart` as named arguments of the calls the template makes (`setUpMain` in `src/core/project/create.ts`). An answer whose call is not found is printed for the owner to add, never a failure. The layouts it offers are a copy of `Layouts` in core, so a new built-in layout is a change here too (and in the editor's new car dialog). `--dry-run` checks the answers and returns where the app would go, which the editor uses to check each page. `--from miata` copies the Miata app as it is, only its pubspec is pointed at SmartifyOS.

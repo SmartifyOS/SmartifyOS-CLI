@@ -3,7 +3,9 @@ import { join } from 'node:path';
 import { headerPath } from '../core/device/network.ts';
 import { addPlatforms, desktopPlatform } from '../core/flutter.ts';
 import { requireCar } from '../core/project/find.ts';
+import { AppCallError, VmService, vmServiceAddress } from '../core/vm-service.ts';
 import { runAttached } from '../ui/attached.ts';
+import { takeCalls } from '../ui/json.ts';
 import { intro, log } from '../ui/output.ts';
 import { readCarStep, step } from '../ui/project.ts';
 import { theme } from '../ui/theme.ts';
@@ -39,8 +41,27 @@ export const runCommand: Command = {
 		}
 
 		log.info(`Starting it. Press ${theme.code('r')} to see a change, ${theme.code('q')} to stop.`);
-		// From the app's own folder, which is where SmartifyOS writes the firmware header.
-		const code = await runAttached('flutter', ['run', '-d', platform], app.dir);
+		// Under --json, `{"call": ...}` reaches the app through its VM service, once Flutter
+		// has said where that is.
+		let service: VmService | undefined;
+		const stopCalls = takeCalls(async (call, params) => {
+			if (!service) throw new AppCallError("Your car's app is not running yet.");
+			return await service.callExtension(call, params);
+		});
+		const onLine = (line: string) => {
+			const address = vmServiceAddress(line);
+			if (!address) return;
+			service?.close();
+			service = new VmService(address);
+		};
+		let code: number;
+		try {
+			// From the app's own folder, which is where SmartifyOS writes the firmware header.
+			code = await runAttached('flutter', ['run', '-d', platform], app.dir, { onLine });
+		} finally {
+			stopCalls();
+			service?.close();
+		}
 		if (code !== 0) {
 			throw new CliError("Your car's app stopped with an error.", {
 				hint: 'What Flutter printed above says why.',

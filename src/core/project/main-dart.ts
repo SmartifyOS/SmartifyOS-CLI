@@ -30,12 +30,13 @@ export function constructorCall(entry: ExtensionEntry): string {
 }
 
 /**
- * Internal: a copy of the source in which comments and strings are blanked out with spaces.
+ * Internal: a copy of the source in which comments and strings are blanked out with spaces,
+ * or only the comments with `keepStrings`.
  *
  * Positions stay the same, so anything found in the copy can be cut out of the original.
  * It is what stops `extensions: [` inside a comment from being taken for the real one.
  */
-export function codeOnly(source: string): string {
+export function codeOnly(source: string, { keepStrings = false } = {}): string {
 	const out = source.split('');
 	let i = 0;
 
@@ -80,7 +81,7 @@ export function codeOnly(source: string): string {
 			}
 			const stop = Math.min(source.length, k + closing.length);
 			// The quotes are kept so the shape of the code is still readable.
-			blank(quoteAt + closing.length, k);
+			if (!keepStrings) blank(quoteAt + closing.length, k);
 			i = stop;
 			continue;
 		}
@@ -214,6 +215,9 @@ export function setArgument(
 		return `${source.slice(0, existing.start)}${name}: ${value}${source.slice(existing.end)}`;
 	}
 
+	const uncommented = uncomment(source, code, open, close, name, value);
+	if (uncommented !== undefined) return uncommented;
+
 	const anchor = options.before ? named(options.before) : undefined;
 	if (anchor && code.slice(lineStart(code, anchor.start), anchor.start).trim() === '') {
 		// Above the comment that belongs to the argument it goes in front of.
@@ -229,6 +233,136 @@ export function setArgument(
 	}
 
 	return appendElement(source, code, open, `${name}: ${value}`);
+}
+
+/**
+ * Internal: an example of the argument the owner left commented out inside the call, like
+ * `// look: CarLook.drawing2D,`, replaced by the real one. Only when there is exactly one such
+ * line and everything above it ends with a comma, so the result is the call as the owner
+ * would have written it by taking the slashes away.
+ */
+function uncomment(
+	source: string,
+	code: string,
+	open: number,
+	close: number,
+	name: string,
+	value: string,
+): string | undefined {
+	const pattern = new RegExp(`^([ \\t]*)//[ \\t]*${name}[ \\t]*:.*$`, 'gm');
+	const inside = source.slice(open + 1, close);
+	const found = [...inside.matchAll(pattern)];
+	const line = found[0];
+	if (found.length !== 1 || !line || line.index === undefined) return undefined;
+	const start = open + 1 + line.index;
+	const before = code.slice(open + 1, start).trimEnd();
+	if (before && !before.endsWith(',')) return undefined;
+	const end = start + line[0].length;
+	return `${source.slice(0, start)}${line[1]}${name}: ${value},${source.slice(end)}`;
+}
+
+/**
+ * Internal: the named arguments of the one call `call` matches, or undefined when the call
+ * cannot be found without doubt.
+ */
+function callArguments(
+	source: string,
+	call: RegExp,
+):
+	| { code: string; open: number; close: number; named: (name: string) => Span | undefined }
+	| undefined {
+	const code = codeOnly(source);
+	const match = onlyMatch(code, call);
+	if (!match) return undefined;
+	const open = match.index + match[0].length - 1;
+	const close = closingBracket(code, open);
+	if (close === -1) return undefined;
+	const items = elements(code, open, close);
+	const named = (name: string) =>
+		items.find((item) => new RegExp(`^${name}\\s*:`).test(code.slice(item.start, item.end)));
+	return { code, open, close, named };
+}
+
+/** Internal: where something starts and ends in the source. */
+interface Span {
+	start: number;
+	end: number;
+}
+
+/**
+ * The value of one named argument of a call, as it is written (`Layouts.split`, `'Miata'`),
+ * comments left out.
+ *
+ * Gives back null when the call is there without it, and undefined when the call cannot be
+ * found without doubt.
+ */
+export function argumentValue(
+	source: string,
+	call: RegExp,
+	name: string,
+): string | null | undefined {
+	const found = callArguments(source, call);
+	if (!found) return undefined;
+	const item = found.named(name);
+	if (!item) return null;
+	const text = codeOnly(source.slice(item.start, item.end), { keepStrings: true });
+	return text
+		.slice(text.indexOf(':') + 1)
+		.replace(/[ \t]+$/gm, '')
+		.trim();
+}
+
+/**
+ * Takes one named argument out of a call, with its comma, and when it stood on lines of its
+ * own those lines and the comment right above them, which is about it.
+ *
+ * Gives back the source unchanged when the call is there without it, and undefined when the
+ * call cannot be found without doubt.
+ */
+export function removeArgument(source: string, call: RegExp, name: string): string | undefined {
+	const found = callArguments(source, call);
+	if (!found) return undefined;
+	const { code, close } = found;
+	const item = found.named(name);
+	if (!item) return source;
+
+	let from = item.start;
+	let to = item.end;
+	const comma = /^\s*,/.exec(code.slice(to, close));
+	if (comma) to += comma[0].length;
+
+	const ownLines =
+		code.slice(lineStart(code, from), from).trim() === '' && /^[ \t]*(\n|$)/.test(code.slice(to));
+	if (ownLines) {
+		from = lineStart(source, from);
+		while (from > 0) {
+			const above = lineStart(source, from - 1);
+			if (!source.slice(above, from).trim().startsWith('//')) break;
+			from = above;
+		}
+		// A blank line that set it apart from the one before goes too.
+		const newline = source.indexOf('\n', to);
+		to = newline === -1 ? source.length : newline + 1;
+		if (from > 0) {
+			const above = lineStart(source, from - 1);
+			if (
+				source.slice(above, from).trim() === '' &&
+				source.slice(to, source.indexOf('\n', to) + 1).trim() === ''
+			) {
+				from = above;
+			}
+		}
+		return `${source.slice(0, from)}${source.slice(to)}`;
+	}
+
+	if (!comma) {
+		// The last one on a line: the comma to take is the one in front of it.
+		const before = code.slice(0, from).trimEnd();
+		if (before.endsWith(',')) from = before.length - 1;
+	} else {
+		to += (/^[ \t]*/.exec(code.slice(to))?.[0] ?? '').length;
+	}
+	return `${source.slice(0, from)}${source.slice(to)}`;
 }
 
 /** Adds the import, in order among the other package imports, unless it is already there. */

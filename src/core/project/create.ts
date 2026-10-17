@@ -1,6 +1,7 @@
 import { extname } from 'node:path';
 import { CliError } from '../../utils/errors.ts';
-import { entryNames, setEntry, yamlScalar } from '../pubspec/blocks.ts';
+import { withAssets } from '../pubspec/assets.ts';
+import { entryNames } from '../pubspec/blocks.ts';
 import { parsePubspec, sourceOf } from '../pubspec/read.ts';
 import { type CoreAt, corePackage, neededOverrides } from '../smartify-os.ts';
 import { withCore, withExtension } from './block.ts';
@@ -291,15 +292,5 @@ export function finishAppPubspec(text: string, core: CoreAt, assets: string[] = 
 		}
 	}
 
-	if (assets.length > 0) {
-		const flutter = pubspec.flutter as { assets?: unknown } | null | undefined;
-		const had = Array.isArray(flutter?.assets) ? flutter.assets.map(String) : [];
-		const all = [...new Set([...had, ...assets])];
-		result = setEntry(result, 'flutter', 'assets', [
-			'assets:',
-			...all.map((asset) => `  - ${yamlScalar(asset)}`),
-		]);
-	}
-
-	return result;
+	return withAssets(result, assets);
 }

@@ -97,6 +97,17 @@ Every one of them tries the change before it keeps it: it fetches the new versio
 
 Adding an extension also switches it on in `lib/main.dart` for you, and removing one takes it out again.
 
+How your car looks and what its About page says can be changed any time, without opening `lib/main.dart`:
+
+```bash
+smartify-os appearance                 # the layout, theme, driver's side, bar and the car on screen
+smartify-os appearance --model-3d ~/Downloads/golf.glb
+smartify-os about                      # its name, what car it is, and rows like the VIN
+smartify-os about --extra "VIN=WVWZZZ1JZXW000001"
+```
+
+Both write into `lib/main.dart` the way you would by hand, and leave alone anything you wrote there that they cannot read. A 3D model, drawing or picture is copied into your app's `assets` folder.
+
 ## Putting it on your car
 
 SmartifyOS goes onto the car on a USB stick. Run these in your car's app folder too.
@@ -209,7 +220,8 @@ The first line is always `start`. The last line is always `result`, which carrie
 | `step`           | Something being worked on: `id`, `status` (`start`, `update`, `done`, `error`), `text`       |
 | `prompt`         | A question: `id`, `kind` (`text`, `password`, `confirm`, `select`, `multiselect`), `message`, and `options`, `initialValue` or `placeholder` when it has them |
 | `prompt-invalid` | The answer to prompt `id` was refused, `message` says why, and the question is still open  |
-| `output`         | A line printed by Flutter while `extension run` runs: `stream`, `text`                     |
+| `output`         | A line printed by Flutter while `run` or `extension run` runs: `stream`, `text`            |
+| `reply`          | The answer to a `call`: its `id`, `ok`, and `data` or an `error` saying why it did not work |
 | `result`         | The end, see above                                                                         |
 
 A `note` that says what to do next carries the same steps as `data.steps`, each with a `kind` (like `run` or `flash`), its `text`, and the `path` it is about when there is one, so a GUI can say each step its own way, with its buttons instead of the commands to type.
@@ -221,7 +233,15 @@ What a program can write to stdin, one JSON object per line:
 | `{"id":"p1","value":...}`      | Answers a prompt: `true`/`false`, a string, an option's `value`, or a list of them for `multiselect` |
 | `{"value":...}`                | Answers the next question asked, for piping every answer in up front |
 | `{"id":"p1","cancel":true}`    | Cancels, the same as Ctrl+C                                           |
-| `{"input":"r"}`                | Types into Flutter while `extension run` runs, `r` to reload and `q` to stop |
+| `{"input":"r"}`                | Types into Flutter while `run` or `extension run` runs, `r` to reload and `q` to stop |
+| `{"call":"describe","id":"c1"}` | Asks the car's app something while `run` runs, see below              |
+
+While `run` runs the car's app, `call` reaches SmartifyOS inside it, with `params` as an object when the call takes any. Every call gets a `reply` with the same `id`. They need a SmartifyOS that knows them, and a call made before the app is up says so in its `error`.
+
+| Call        | What it does                                                                     |
+| ----------- | -------------------------------------------------------------------------------- |
+| `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, and the `about` page |
+| `configure` | Changes what the car starts with, any of `layout`, `theme`, `driverSide`, `bar` (`infoDisplay`, `dock`, `infoDisplayAndDock`), `carLook` (`model3D`, `drawing2D`, `image`), `deviceName`, `model` and `extra` (an object). An empty string goes back to SmartifyOS's own. The driver's own pick of the same thing is forgotten, and the reply is the same as `describe`. It does not change `lib/main.dart`, `appearance` and `about` do that |
 
 When stdin ends while a question is open, the command fails and puts the question in `error.details.prompt`, so a program that answered nothing learns what it has to pass as a flag. `--yes` skips every question that has a sensible answer already.
 

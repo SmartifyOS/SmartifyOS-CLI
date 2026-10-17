@@ -1,3 +1,5 @@
+import { aboutCommand } from './about.ts';
+import { appearanceCommand } from './appearance.ts';
 import { createCommand } from './create.ts';
 import { deviceCommand } from './device/index.ts';
 import { doctorCommand } from './doctor.ts';
@@ -28,6 +30,8 @@ register(
 	updateCommand,
 	extensionCommand,
 	runCommand,
+	appearanceCommand,
+	aboutCommand,
 	exportCommand,
 	deviceCommand,
 	linkCommand,

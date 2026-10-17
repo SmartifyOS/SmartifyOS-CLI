@@ -67,6 +67,8 @@ export type Event =
 	| PromptEvent
 	| { type: 'prompt-invalid'; id: string; message: string }
 	| { type: 'output'; stream: 'stdout' | 'stderr'; text: string }
+	| { type: 'reply'; id: string | null; ok: true; data: unknown }
+	| { type: 'reply'; id: string | null; ok: false; error: string }
 	| { type: 'result'; ok: true; exitCode: number; data: unknown }
 	| { type: 'result'; ok: false; exitCode: number; error: ErrorPayload };
 
@@ -112,7 +114,12 @@ interface Message {
 	value?: unknown;
 	cancel?: boolean;
 	input?: string;
+	call?: string;
+	params?: Record<string, unknown>;
 }
+
+/** What answers a `{"call": ...}`: what the running app said, or throws saying why not. */
+export type CallHandler = (call: string, params: Record<string, unknown>) => Promise<unknown>;
 
 /** Internal: one line of stdin as a message, or undefined when it is not a JSON object. */
 function parseMessage(line: string): Message | undefined {
@@ -142,6 +149,8 @@ class Inbox {
 	private readonly close: () => void;
 	/** Where `{"input": ...}` goes, while a child process is running. */
 	onInput: ((text: string) => void) | undefined;
+	/** Where `{"call": ...}` goes, while a car's app is running. */
+	onCall: CallHandler | undefined;
 
 	constructor(input: Readable) {
 		const lines = createInterface({ input, crlfDelay: Number.POSITIVE_INFINITY });
@@ -172,11 +181,35 @@ class Inbox {
 			return;
 		}
 
+		if (typeof message.call === 'string') {
+			this.answerCall(message.call, message.params ?? {}, message.id ?? null);
+			return;
+		}
+
 		if (this.waiting && (message.id === undefined || message.id === this.waitingId)) {
 			this.deliver(message);
 			return;
 		}
 		this.early.push(message);
+	}
+
+	/** Every call is replied to, so a program never waits for an answer that is not coming. */
+	private answerCall(call: string, params: Record<string, unknown>, id: string | null): void {
+		const handler = this.onCall;
+		if (!handler) {
+			emit({ type: 'reply', id, ok: false, error: "Your car's app is not running." });
+			return;
+		}
+		handler(call, params).then(
+			(data) => emit({ type: 'reply', id, ok: true, data }),
+			(error: unknown) =>
+				emit({
+					type: 'reply',
+					id,
+					ok: false,
+					error: error instanceof Error ? error.message : String(error),
+				}),
+		);
 	}
 
 	private deliver(message: Message | undefined): void {
@@ -232,6 +265,19 @@ export function forwardInput(handler: (text: string) => void): () => void {
 	box.onInput = handler;
 	return () => {
 		if (box.onInput === handler) box.onInput = undefined;
+	};
+}
+
+/**
+ * Lets `{"call": ...}` messages on stdin reach the running car's app.
+ *
+ * @returns a function that stops it again.
+ */
+export function takeCalls(handler: CallHandler): () => void {
+	const box = theInbox();
+	box.onCall = handler;
+	return () => {
+		if (box.onCall === handler) box.onCall = undefined;
 	};
 }
 

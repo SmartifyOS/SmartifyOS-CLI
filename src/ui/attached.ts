@@ -12,14 +12,22 @@ export async function runAttached(
 	tool: Tool,
 	args: string[],
 	cwd: string,
-	options: { stopsWithCtrlC?: boolean; env?: Record<string, string> } = {},
+	options: {
+		stopsWithCtrlC?: boolean;
+		env?: Record<string, string>;
+		/** Sees every line the tool prints under `--json`. In a terminal the lines go straight there. */
+		onLine?: (line: string) => void;
+	} = {},
 ): Promise<number> {
 	if (isJsonMode()) {
 		const child = runStreaming(
 			tool,
 			args,
 			cwd,
-			(stream, text) => emit({ type: 'output', stream, text }),
+			(stream, text) => {
+				options.onLine?.(text);
+				emit({ type: 'output', stream, text });
+			},
 			options.env,
 		);
 		const stop = forwardInput((text) => child.write(text));

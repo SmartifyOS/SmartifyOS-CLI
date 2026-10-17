@@ -48,7 +48,7 @@ import type { Command, Flags } from './types.ts';
 type Start = 'minimal' | 'miata';
 
 /** What `--bar` takes, and the `BarContent` each one is. */
-const barFlag: Record<string, BarChoice> = {
+export const barFlag: Record<string, BarChoice> = {
 	'info-display': 'infoDisplay',
 	dock: 'dock',
 	both: 'infoDisplayAndDock',
@@ -437,7 +437,7 @@ async function askSetup(flags: Flags, cwd: string, asking: boolean): Promise<Car
 }
 
 /** Internal: how each look is asked for and named in a flag. */
-const lookFlags: Record<keyof CarLooks, string> = {
+export const lookFlags: Record<keyof CarLooks, string> = {
 	model3D: 'model-3d',
 	drawing2D: 'drawing',
 	image: 'picture',
@@ -483,8 +483,8 @@ async function askLooks(flags: Flags, cwd: string, asking: boolean): Promise<Car
 	return looks;
 }
 
-/** Internal: why a file cannot be this look of the car, or nothing when it can. */
-function lookProblem(path: string, look: keyof CarLooks): string | undefined {
+/** Why a file cannot be this look of the car, or nothing when it can. */
+export function lookProblem(path: string, look: keyof CarLooks): string | undefined {
 	if (!path || !existsSync(path)) return `There is no file at ${path || 'that path'}.`;
 	const allowed = lookExtensions[look];
 	if (!allowed.includes(extname(path).toLowerCase())) {
@@ -494,10 +494,10 @@ function lookProblem(path: string, look: keyof CarLooks): string | undefined {
 }
 
 /**
- * Internal: a path as someone typed or dragged it in: quotes taken off, `\ ` the way a
+ * A path as someone typed or dragged it in: quotes taken off, `\ ` the way a
  * terminal escapes a space, and `~` for their home folder.
  */
-function cleanPath(input: string, cwd: string): string {
+export function cleanPath(input: string, cwd: string): string {
 	let path = input.trim();
 	if (/^(['"]).*\1$/.test(path)) path = path.slice(1, -1);
 	else if (process.platform !== 'win32') path = path.replace(/\\(.)/g, '$1');
