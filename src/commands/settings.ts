@@ -1,5 +1,5 @@
 import { requireCar } from '../core/project/find.ts';
-import { partIcons, partNames } from '../core/project/parts.ts';
+import { parseOrder, partIcons, partNames } from '../core/project/parts.ts';
 import {
 	addRow,
 	builtInPages,
@@ -233,7 +233,7 @@ const editCommand: Command = {
 	name: 'edit',
 	summary: 'Change a settings page',
 	description:
-		"Changes a page of your own: its name, the line under it, its icon, or the page it goes in. Run it in your car's app folder.",
+		"Changes a page of your own: its name, the line under it, its icon, the page it goes in, or where its row sits there. Run it in your car's app folder.",
 	usage: '<page>',
 	examples: [`${binaryName} settings edit "Seat heating" --in display`],
 	flags: {
@@ -241,16 +241,27 @@ const editCommand: Command = {
 		subtitle: { type: 'string', describe: 'The line under it, or "" for none' },
 		icon: { type: 'string', describe: "Its icon from Flutter's Icons" },
 		in: { type: 'string', describe: 'The page it goes in' },
+		order: {
+			type: 'string',
+			describe: 'Where its row sits, smaller first, or "" for the usual place',
+		},
 	},
 	async run({ flags, positionals }) {
 		intro('Change a settings page');
 		const app = await requireCar();
 		const page = await pickPage(app.dir, positionals[0]);
-		const change: { title?: string; subtitle?: string; icon?: string; parent?: string } = {};
+		const change: {
+			title?: string;
+			subtitle?: string;
+			icon?: string;
+			parent?: string;
+			order?: number | null;
+		} = {};
 		if (typeof flags.title === 'string') change.title = flags.title;
 		if (typeof flags.subtitle === 'string') change.subtitle = flags.subtitle;
 		if (typeof flags.icon === 'string') change.icon = checkIcon(flags.icon);
 		if (typeof flags.in === 'string') change.parent = flags.in;
+		if (typeof flags.order === 'string') change.order = parseOrder(flags.order);
 		if (Object.keys(change).length === 0) {
 			const what = await select<'title' | 'parent' | 'icon'>({
 				message: 'What do you want to change?',

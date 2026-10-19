@@ -115,7 +115,8 @@ smartify-os window create "Trip computer"     # a window, with its icon in the a
 smartify-os tile create "Interior light"      # a switch or button in the quick settings
 smartify-os widget create "Oil temperature"   # a card or widget on the home screen
 smartify-os window list                       # the ones your app has
-smartify-os window edit "Trip computer" --icon speed
+smartify-os window edit "Trip computer" --icon speed --order 10
+smartify-os window edit "Trip computer" --app-list off   # one your app opens itself
 smartify-os window remove "Trip computer"
 ```
 

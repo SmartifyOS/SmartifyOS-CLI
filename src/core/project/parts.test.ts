@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { partNames, partSource, readCall, readPart, register, unregister } from './parts.ts';
+import {
+	parseOrder,
+	partNames,
+	partSource,
+	readCall,
+	readPart,
+	register,
+	unregister,
+} from './parts.ts';
 
 const main = `import 'package:smartify_os_core/core.dart';
 
@@ -145,6 +153,24 @@ final carWidgets = <HomeWidget>[
 	test('a part made by the CLI can be changed', () => {
 		const source = partSource('tile', 'toggle', partNames('Interior light'), 'lightbulb');
 		const tile = readPart('tile', 'lib/quick_settings/interior_light_tile.dart', source, '');
-		expect(tile.canChange).toEqual({ name: true, icon: true, remove: true });
+		expect(tile.canChange).toEqual({
+			name: true,
+			icon: true,
+			order: true,
+			appList: false,
+			remove: true,
+		});
+		expect(tile.order).toBeNull();
+		expect(tile.inAppList).toBeNull();
+	});
+});
+
+describe('parseOrder', () => {
+	test('takes a whole number, or nothing for the usual place', () => {
+		expect(parseOrder('10')).toBe(10);
+		expect(parseOrder(' -5 ')).toBe(-5);
+		expect(parseOrder('')).toBeNull();
+		expect(() => parseOrder('first')).toThrow();
+		expect(() => parseOrder('1.5')).toThrow();
 	});
 });

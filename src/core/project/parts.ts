@@ -15,6 +15,7 @@ import {
 	declarationAround,
 	keepOnlyCall,
 	onlyMatch,
+	removeArgument,
 	removeElement,
 	setArgument,
 } from './main-dart.ts';
@@ -220,7 +221,11 @@ export interface Part {
 	 * them, and nothing for one written some other way (several in a list, say), which is listed
 	 * but left to its owner.
 	 */
-	canChange: { name: boolean; icon: boolean; remove: boolean };
+	canChange: { name: boolean; icon: boolean; order: boolean; appList: boolean; remove: boolean };
+	/** Where it sits among the others of its kind, smaller first. Null when not written, SmartifyOS's 100. */
+	order: number | null;
+	/** A window: whether its icon is in the app list. Null for the other kinds. */
+	inAppList: boolean | null;
 	/** Where its name and icon are written, another file for a window in an app list of the owner's own. */
 	nameAt: { file: string; line: number };
 	/** The line where what it shows or does is written, to start there. */
@@ -428,6 +433,35 @@ export function stringValue(argument: string | null | undefined, code: string): 
 	return constant ? (dartStringValue(constant) ?? null) : null;
 }
 
+/** Internal: an `order:` argument as a number, null when there is none or it is not a plain one. */
+function orderValue(argument: string | null | undefined): number | null {
+	const value = argument?.trim() ?? '';
+	return /^-?\d+$/.test(value) ? Number(value) : null;
+}
+
+/**
+ * An order as given on the command line or by the editor: a whole number, or empty for none,
+ * which is SmartifyOS's own 100.
+ *
+ * @throws {CliError} when it is neither.
+ */
+export function parseOrder(input: string): number | null {
+	const value = input.trim();
+	if (value === '') return null;
+	if (/^-?\d+$/.test(value)) return Number(value);
+	throw new CliError(`"${input}" is not an order.`, {
+		hint: 'Use a whole number, smaller comes first, or "" for the usual place.',
+	});
+}
+
+/** Internal: whether the rest of the app names `symbol` itself, `TripComputerWindow.appListEntry`. */
+function mentions(rest: string, symbol: string | null): boolean {
+	return (
+		symbol !== null &&
+		new RegExp(`\\b${symbol.replace('.', '\\s*\\.\\s*')}\\b`).test(codeOnly(rest))
+	);
+}
+
 /** Internal: the line `index` is on, counted from 1. */
 function lineAt(source: string, index: number): number {
 	return source.slice(0, index).split('\n').length;
@@ -525,9 +559,14 @@ export function readPart(
 			// Where editPart changes them.
 			name: kind === 'window' ? title !== undefined : own !== undefined,
 			icon: own !== undefined,
+			order: own !== undefined,
+			appList: kind === 'window' && own !== undefined,
 			// Only when nothing but lib/main.dart uses it, which removePart takes it out of.
 			remove: !sources || !usedIn(besides(sources, file, 'lib/main.dart'), symbol),
 		},
+		order: orderValue(argumentValue(entry.source, call, 'order')),
+		// One written in an app list of the owner's own is in it.
+		inAppList: kind === 'window' ? !own || mentions(rest, symbol) : null,
 		nameAt: {
 			file: entry.file,
 			line: entry.at === undefined ? line : lineAt(entry.source, entry.at),
@@ -573,7 +612,9 @@ export function readCall(
 		symbol,
 		// Not in a declaration, it is likely handed over right where it is written.
 		registered: symbol === null || file === 'lib/main.dart' || usedIn(rest, symbol),
-		canChange: { name: false, icon: false, remove: false },
+		canChange: { name: false, icon: false, order: false, appList: false, remove: false },
+		order: orderValue(argumentValue(kept, call, 'order')),
+		inAppList: kind === 'window' ? true : null,
 		nameAt: { file, line },
 		line,
 	};
@@ -781,35 +822,79 @@ export async function createPart(
 	await Bun.write(join(appDir, file), partSource(kind, variant, names, icon));
 	await formatDart([join(appDir, file)]);
 
-	const mainPath = join(appDir, 'lib', 'main.dart');
-	const before = await mainSource(appDir);
-	const importLine = `import 'package:${await packageName(appDir)}/${file.slice('lib/'.length)}';`;
-	const registered = register(before, kind, symbol);
-	let manual: string | null = null;
-	if (registered === undefined) {
-		const { config, list } = spec.register;
-		manual = `${symbol} in ${list}: of ${config}(...), and ${importLine}`;
-	} else {
-		await writeDart(
-			mainPath,
-			before,
-			addImportLine(addImportLine(registered, spec.register.import), importLine),
-		);
-	}
-
+	const manual = await handOver(appDir, kind, file, symbol);
 	const sources = await appSources(appDir);
 	const source = sources.get(file) ?? '';
 	return { part: readPart(kind, file, source, besides(sources, file), sources), manual };
 }
 
-/** Renames a part or gives it another icon, in its file. Undefined is "leave it". */
-export async function editPart(
+/**
+ * Internal: hands `symbol` to SmartifyOS in `lib/main.dart`, with the import of its file.
+ * Resolves with what to add by hand instead, when there is no clear place for it.
+ */
+async function handOver(
 	appDir: string,
-	part: Part,
-	change: { name?: string; icon?: string },
-): Promise<Part> {
-	if (change.name !== undefined && !part.canChange.name) throw cannotEdit(part, 'name');
-	if (change.icon !== undefined && !part.canChange.icon) throw cannotEdit(part, 'icon');
+	kind: PartKind,
+	file: string,
+	symbol: string,
+): Promise<string | null> {
+	const spec = kinds[kind].register;
+	const before = await mainSource(appDir);
+	const importLine = `import 'package:${await packageName(appDir)}/${file.slice('lib/'.length)}';`;
+	const registered = register(before, kind, symbol);
+	if (registered === undefined) {
+		return `${symbol} in ${spec.list}: of ${spec.config}(...), and ${importLine}`;
+	}
+	await writeDart(
+		join(appDir, 'lib', 'main.dart'),
+		before,
+		addImportLine(addImportLine(registered, spec.import), importLine),
+	);
+	return null;
+}
+
+/**
+ * Internal: takes `symbol` out of `lib/main.dart`, and the import of its file once nothing
+ * there uses what it has.
+ */
+async function takeBack(
+	appDir: string,
+	kind: PartKind,
+	file: string,
+	symbol: string | null,
+): Promise<void> {
+	const before = await mainSource(appDir);
+	let source = symbol ? unregister(before, kind, symbol) : before;
+	const name = symbol?.split('.')[0];
+	if (!name || !new RegExp(`\\b${name}\\b`).test(codeOnly(source))) {
+		const importLine = new RegExp(
+			`^[ \\t]*import\\s+['"]package:[^/'"]+/${file.slice('lib/'.length).replace(/[.]/g, '\\.')}['"];[ \\t]*\\r?\\n`,
+			'm',
+		);
+		source = source.replace(importLine, '');
+	}
+	await writeDart(join(appDir, 'lib', 'main.dart'), before, source);
+}
+
+/** What can be changed of a part. Undefined is "leave it", a null order takes it off. */
+export interface PartChange {
+	name?: string;
+	icon?: string;
+	order?: number | null;
+	/** A window: whether its icon is in the app list. */
+	appList?: boolean;
+}
+
+/**
+ * Renames a part, gives it another icon or order, in its file, or puts a window into the app
+ * list or takes it out, in `lib/main.dart`.
+ */
+export async function editPart(appDir: string, part: Part, change: PartChange): Promise<Part> {
+	for (const what of ['name', 'icon', 'order', 'appList'] as const) {
+		if (change[what] !== undefined && !part.canChange[what]) {
+			throw cannotEdit(part, what === 'appList' ? 'place in the app list' : what);
+		}
+	}
 	const path = join(appDir, part.file);
 	const before = await Bun.file(path).text();
 	let source = before;
@@ -832,8 +917,26 @@ export async function editPart(
 		if (edited === undefined) throw cannotEdit(part, 'icon');
 		source = edited;
 	}
+	if (change.order === null) {
+		source = removeArgument(source, call, 'order') ?? source;
+	} else if (change.order !== undefined) {
+		const edited = setArgument(source, call, 'order', String(change.order));
+		if (edited === undefined) throw cannotEdit(part, 'order');
+		source = edited;
+	}
 
 	await writeDart(path, before, source);
+	if (change.appList !== undefined && change.appList !== part.inAppList && part.symbol) {
+		if (!change.appList) await takeBack(appDir, part.kind, part.file, part.symbol);
+		else {
+			const manual = await handOver(appDir, part.kind, part.file, part.symbol);
+			if (manual) {
+				throw new CliError('There is no clear place for it in lib/main.dart.', {
+					hint: `Add ${manual}`,
+				});
+			}
+		}
+	}
 	const sources = await appSources(appDir);
 	const written = sources.get(part.file) ?? source;
 	return readPart(part.kind, part.file, written, besides(sources, part.file), sources);
@@ -852,14 +955,6 @@ export async function removePart(appDir: string, part: Part): Promise<void> {
 			hint: `More of your app than lib/main.dart uses it, take it out by hand starting in ${part.file}.`,
 		});
 	}
-	const mainPath = join(appDir, 'lib', 'main.dart');
-	const before = await mainSource(appDir);
-	let source = part.symbol ? unregister(before, part.kind, part.symbol) : before;
-	const importLine = new RegExp(
-		`^[ \\t]*import\\s+['"]package:[^/'"]+/${part.file.slice('lib/'.length).replace(/[.]/g, '\\.')}['"];[ \\t]*\\r?\\n`,
-		'm',
-	);
-	source = source.replace(importLine, '');
-	await writeDart(mainPath, before, source);
+	await takeBack(appDir, part.kind, part.file, part.symbol);
 	await rm(join(appDir, part.file), { force: true });
 }

@@ -6,8 +6,10 @@ import {
 	kinds,
 	listParts,
 	type Part,
+	type PartChange,
 	type PartKind,
 	type PartVariant,
+	parseOrder,
 	partIcons,
 	partNames,
 	removePart,
@@ -225,7 +227,7 @@ function editCommand(kind: PartKind): Command {
 		name: 'edit',
 		aliases: ['rename'],
 		summary: `Rename a ${spec.noun} or give it another icon`,
-		description: `Changes the name the driver reads or the icon of one of your ${words[kind].plural}, in its file. Run it in your car's app folder.`,
+		description: `Changes the name the driver reads, the icon or the order of one of your ${words[kind].plural}, in its file.${kind === 'window' ? ' Or takes it out of the app list, for a window your app opens some other way, or puts it back.' : ''} Run it in your car's app folder.`,
 		usage: '<name>',
 		examples: [
 			`${binaryName} ${kind} edit "${words[kind].example}" --name "Something else"`,
@@ -234,14 +236,33 @@ function editCommand(kind: PartKind): Command {
 		flags: {
 			name: { type: 'string', describe: 'What the driver reads' },
 			icon: { type: 'string', describe: "Its icon from Flutter's Icons, like speed" },
+			order: {
+				type: 'string',
+				describe: 'Where it sits among the others, smaller first, or "" for the usual place',
+			},
+			...(kind === 'window'
+				? {
+						'app-list': {
+							type: 'string' as const,
+							describe: 'on to have its icon in the app list, off for one opened some other way',
+						},
+					}
+				: {}),
 		},
 		async run({ flags, positionals }) {
 			intro(`Change a ${spec.noun}`);
 			const app = await requireCar();
 			const part = await pickPart(app.dir, kind, positionals[0]);
-			const change: { name?: string; icon?: string } = {};
+			const change: PartChange = {};
 			if (typeof flags.name === 'string') change.name = flags.name;
 			if (typeof flags.icon === 'string') change.icon = checkIcon(flags.icon);
+			if (typeof flags.order === 'string') change.order = parseOrder(flags.order);
+			const appList = flags['app-list'];
+			if (appList !== undefined) {
+				if (appList !== 'on' && appList !== 'off')
+					throw new CliError('--app-list takes on or off.');
+				change.appList = appList === 'on';
+			}
 			if (Object.keys(change).length === 0) {
 				const what = await select<'name' | 'icon'>({
 					message: 'What do you want to change?',

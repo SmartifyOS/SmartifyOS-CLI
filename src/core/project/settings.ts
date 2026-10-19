@@ -140,6 +140,8 @@ export interface SettingsPageInfo {
 	symbol: string | null;
 	/** Whether the app hands it to SmartifyOS, in `lib/main.dart` or anywhere else. */
 	registered: boolean;
+	/** Where its row sits on the page it goes in, smaller first. Null when not written, SmartifyOS's 100. */
+	order: number | null;
 	/**
 	 * Whether the CLI can change it: true for one in a file of its own, the way the CLI makes
 	 * them, false for one written some other way (several in a list, say), which is listed but
@@ -341,6 +343,9 @@ export function readPage(file: string, source: string, rest: string): SettingsPa
 		file,
 		symbol,
 		registered: usedIn(rest, symbol),
+		order: /^-?\d+$/.test(argumentValue(source, anyPageCall, 'order')?.trim() ?? '')
+			? Number(argumentValue(source, anyPageCall, 'order'))
+			: null,
 		editable: true,
 		rows: entries ? entries.rows.map((row) => readRow(source, row.start, row.end)) : [],
 		line: entries ? lineAt(source, entries.open) : call ? lineAt(source, call.index) : 1,
@@ -793,7 +798,13 @@ export function moveRow(source: string, index: number, direction: 'up' | 'down')
 export function changePage(
 	source: string,
 	page: SettingsPageInfo,
-	change: { title?: string; subtitle?: string; icon?: string; parent?: string },
+	change: {
+		title?: string;
+		subtitle?: string;
+		icon?: string;
+		parent?: string;
+		order?: number | null;
+	},
 ): string {
 	let result = source;
 	const fail = (what: string) =>
@@ -811,6 +822,8 @@ export function changePage(
 		else result = removeArgument(result, pageCall, 'subtitle') ?? result;
 	}
 	if (change.icon !== undefined) set('icon', `const Icon(Icons.${change.icon})`);
+	if (change.order === null) result = removeArgument(result, pageCall, 'order') ?? result;
+	else if (change.order !== undefined) set('order', String(change.order));
 	if (change.parent !== undefined) {
 		if (change.parent === page.id) {
 			throw new CliError('A page cannot go in itself.', { hint: 'Pick another page for it.' });
