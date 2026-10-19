@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CliError } from '../../utils/errors.ts';
@@ -9,8 +9,11 @@ import {
 	addImportLine,
 	appendElement,
 	argumentValue,
+	callsAt,
 	closingBracket,
 	codeOnly,
+	declarationAround,
+	keepOnlyCall,
 	onlyMatch,
 	removeElement,
 	setArgument,
@@ -207,8 +210,19 @@ export interface Part {
 	file: string;
 	/** What `lib/main.dart` hands to SmartifyOS: `TripComputerWindow.appListEntry`. */
 	symbol: string | null;
-	/** Whether `lib/main.dart` hands it to SmartifyOS. */
+	/**
+	 * Whether the app hands it to SmartifyOS: `lib/main.dart` does, or another file of the app uses
+	 * it (an app list of the owner's own, say).
+	 */
 	registered: boolean;
+	/**
+	 * What of it the CLI can change: all of it for one in a file of its own, the way the CLI makes
+	 * them, and nothing for one written some other way (several in a list, say), which is listed
+	 * but left to its owner.
+	 */
+	canChange: { name: boolean; icon: boolean; remove: boolean };
+	/** Where its name and icon are written, another file for a window in an app list of the owner's own. */
+	nameAt: { file: string; line: number };
 	/** The line where what it shows or does is written, to start there. */
 	line: number;
 }
@@ -393,23 +407,76 @@ const calls: Record<PartKind, RegExp> = {
 	widget: /\bHomeWidget(?:\s*\.\s*pinned)?\s*\(/,
 };
 
-/** Reads a part back from its file. */
-export function readPart(kind: PartKind, file: string, source: string, main: string): Part {
+/** Internal: the argument of each kind's call that holds what the driver reads. */
+const nameArguments: Record<PartKind, string> = { window: 'title', tile: 'label', widget: 'title' };
+
+/** Internal: `Icon(Icons.x)` as `x`, null when it is anything else. */
+function iconName(code: string | null | undefined): string | null {
+	return /^(?:const\s+)?Icon\(\s*Icons\.([a-z0-9_]+)\s*\)$/.exec(code?.trim() ?? '')?.[1] ?? null;
+}
+
+/**
+ * Internal: a string argument as the driver reads it, also when it is written as a constant of
+ * the app's own (`id: counterWidgetId`, with `const counterWidgetId = 'counter';` in `code`).
+ */
+export function stringValue(argument: string | null | undefined, code: string): string | null {
+	const value = argument?.trim() ?? '';
+	if (!/^[A-Za-z_]\w*$/.test(value)) return dartStringValue(value) ?? null;
+	const constant = new RegExp(
+		`\\bconst\\s+(?:String\\s+)?${value}\\s*=\\s*(r?'[^'\\n]*'|r?"[^"\\n]*")\\s*;`,
+	).exec(code)?.[1];
+	return constant ? (dartStringValue(constant) ?? null) : null;
+}
+
+/** Internal: the line `index` is on, counted from 1. */
+function lineAt(source: string, index: number): number {
+	return source.slice(0, index).split('\n').length;
+}
+
+/** Internal: the call of its kind a part's id, name and icon are read from. */
+interface Entry {
+	file: string;
+	/** The file's source with every other call of the kind blanked out. */
+	source: string;
+	/** Where the call starts, undefined when there is none. */
+	at: number | undefined;
+}
+
+/** Internal: an `AppListEntry` anywhere in the app that opens the window `className`. */
+function appListEntryOf(sources: Map<string, string>, className: string): Entry | undefined {
+	const opens = new RegExp(`\\b${className}\\b`);
+	for (const [file, source] of sources) {
+		const code = codeOnly(source);
+		for (const at of callsAt(code, calls.window)) {
+			const close = closingBracket(code, code.indexOf('(', at));
+			if (opens.test(code.slice(at, close))) {
+				return { file, source: keepOnlyCall(source, calls.window, at), at };
+			}
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Reads a part back from its file of its own, with `rest` the code of the app besides it (see
+ * {@link besides}) and `sources` all of the app, for a window whose icon in the app list is
+ * written somewhere else.
+ */
+export function readPart(
+	kind: PartKind,
+	file: string,
+	source: string,
+	rest: string,
+	sources?: Map<string, string>,
+): Part {
 	const code = codeOnly(source);
 	const call = calls[kind];
-	const id = dartStringValue(argumentValue(source, call, 'id') ?? '') ?? null;
-	const iconCode = argumentValue(source, call, 'icon') ?? '';
-	const icon = /^(?:const\s+)?Icon\(\s*Icons\.([a-z0-9_]+)\s*\)$/.exec(iconCode)?.[1] ?? null;
 
-	let name: string | null;
 	let variant: PartVariant | null;
 	let symbol: string | null;
+	let className: string | undefined;
 	if (kind === 'window') {
-		const className = /\bclass\s+([A-Za-z_]\w*)\s+extends\b/.exec(code)?.[1];
-		const title = /\bstatic\s+const\s+(?:String\s+)?title\s*=\s*(r?['"][^\n]*['"])\s*;/.exec(
-			source,
-		)?.[1];
-		name = title ? (dartStringValue(title) ?? null) : null;
+		className = /\bclass\s+([A-Za-z_]\w*)\s+extends\b/.exec(code)?.[1];
 		variant = code.includes('SmartifyOsFloatingWindow(') ? 'floating' : 'fullscreen';
 		symbol = className ? `${className}.appListEntry` : null;
 	} else if (kind === 'tile') {
@@ -417,48 +484,130 @@ export function readPart(kind: PartKind, file: string, source: string, main: str
 			/\b(?:final|const)\s+([A-Za-z_]\w*)\s*=\s*QuickSettingsTile\s*\.\s*(toggle|button)\b/.exec(
 				code,
 			);
-		name = dartStringValue(argumentValue(source, call, 'label') ?? '') ?? null;
 		variant = (found?.[2] as PartVariant | undefined) ?? null;
 		symbol = found?.[1] ?? null;
 	} else {
 		const found = /\b(?:final|const)\s+([A-Za-z_]\w*)\s*=\s*HomeWidget(\s*\.\s*pinned)?\s*\(/.exec(
 			code,
 		);
-		name = dartStringValue(argumentValue(source, call, 'title') ?? '') ?? null;
 		variant = found ? (found[2] ? 'pinned' : 'card') : null;
 		symbol = found?.[1] ?? null;
 	}
 
-	const registered =
-		symbol !== null &&
-		new RegExp(`\\b${symbol.replace('.', '\\s*\\.\\s*')}\\b`).test(codeOnly(main));
+	// The CLI writes a window's icon in the app list into its own file, but an owner may have
+	// written it anywhere else, an app list of their own say.
+	const own = onlyMatch(code, call);
+	const entry: Entry = (!own && className && sources && appListEntryOf(sources, className)) || {
+		file,
+		source,
+		at: own?.index,
+	};
+	const title =
+		kind === 'window'
+			? /\bstatic\s+const\s+(?:String\s+)?title\s*=\s*(r?['"][^\n]*['"])\s*;/.exec(source)?.[1]
+			: undefined;
+	const app = `${entry.source}\n${rest}`;
+	const name = title
+		? (dartStringValue(title) ?? null)
+		: stringValue(argumentValue(entry.source, call, nameArguments[kind]), app);
+	const line = lineOf(source, starts[kind]);
+
 	return {
 		kind,
-		id,
+		id: stringValue(argumentValue(entry.source, call, 'id'), app),
 		name,
 		variant,
-		icon,
+		icon: iconName(argumentValue(entry.source, call, 'icon')),
 		file,
 		symbol,
-		registered,
-		line: lineOf(source, starts[kind]),
+		registered: usedIn(rest, symbol),
+		canChange: {
+			// Where editPart changes them.
+			name: kind === 'window' ? title !== undefined : own !== undefined,
+			icon: own !== undefined,
+			// Only when nothing but lib/main.dart uses it, which removePart takes it out of.
+			remove: !sources || !usedIn(besides(sources, file, 'lib/main.dart'), symbol),
+		},
+		nameAt: {
+			file: entry.file,
+			line: entry.at === undefined ? line : lineAt(entry.source, entry.at),
+		},
+		line,
 	};
 }
 
-/** Every part of a kind in the app, in its folder, in order of file name. */
+/**
+ * Reads a part written some other way than the CLI writes them: the call at `at` in `file`, one
+ * of several there or in a list of the owner's own. It is listed but left to its owner, so the
+ * CLI changes nothing of it.
+ */
+export function readCall(
+	kind: PartKind,
+	file: string,
+	source: string,
+	at: number,
+	rest: string,
+): Part {
+	const call = calls[kind];
+	const kept = keepOnlyCall(source, call, at);
+	const code = codeOnly(source);
+	const opening = code.slice(at, code.indexOf('(', at));
+	const variant: PartVariant | null =
+		kind === 'tile'
+			? ((/\b(toggle|button)\b/.exec(opening)?.[1] as PartVariant | undefined) ?? null)
+			: kind === 'widget'
+				? opening.includes('pinned')
+					? 'pinned'
+					: 'card'
+				: null;
+	// What is handed to SmartifyOS: the list it is in, `miataTiles`.
+	const symbol = declarationAround(code, at);
+	const line = lineAt(source, at);
+	return {
+		kind,
+		id: stringValue(argumentValue(kept, call, 'id'), `${source}\n${rest}`),
+		name: stringValue(argumentValue(kept, call, nameArguments[kind]), `${source}\n${rest}`),
+		variant,
+		icon: iconName(argumentValue(kept, call, 'icon')),
+		file,
+		symbol,
+		// Not in a declaration, it is likely handed over right where it is written.
+		registered: symbol === null || file === 'lib/main.dart' || usedIn(rest, symbol),
+		canChange: { name: false, icon: false, remove: false },
+		nameAt: { file, line },
+		line,
+	};
+}
+
+/**
+ * Every part of a kind in the app: first the ones in files of their own in its folder, the way the
+ * CLI makes them, then any written some other way anywhere in `lib/`.
+ */
 export async function listParts(appDir: string, kind: PartKind): Promise<Part[]> {
-	const folder = join(appDir, 'lib', kinds[kind].folder);
-	if (!existsSync(folder)) return [];
-	const main = await mainSource(appDir);
-	const files = readdirSync(folder)
-		.filter((name) => name.endsWith('.dart'))
-		.sort();
+	const sources = await appSources(appDir);
+	const folder = `lib/${kinds[kind].folder}/`;
+	const call = calls[kind];
+	const files = [...sources.keys()].sort();
 	const parts: Part[] = [];
-	for (const name of files) {
-		const file = `lib/${kinds[kind].folder}/${name}`;
-		const part = readPart(kind, file, await Bun.file(join(appDir, file)).text(), main);
+	// The calls those have read already, a window's icon in an app list elsewhere say.
+	const read = new Set<string>();
+	for (const file of files) {
+		if (!file.startsWith(folder) || file.slice(folder.length).includes('/')) continue;
+		const source = sources.get(file) ?? '';
+		// A file with several tiles or widgets is not one the CLI made, those are read below.
+		if (kind !== 'window' && callsAt(codeOnly(source), call).length > 1) continue;
+		const part = readPart(kind, file, source, besides(sources, file), sources);
 		// Something else that lives in the folder, not one of these.
-		if (part.symbol) parts.push(part);
+		if (!part.symbol) continue;
+		parts.push(part);
+		read.add(`${part.nameAt.file}:${part.nameAt.line}`);
+	}
+	for (const file of files) {
+		const source = sources.get(file) ?? '';
+		for (const at of callsAt(codeOnly(source), call)) {
+			if (read.has(`${file}:${lineAt(source, at)}`)) continue;
+			parts.push(readCall(kind, file, source, at, besides(sources, file)));
+		}
 	}
 	return parts;
 }
@@ -478,6 +627,34 @@ export function findPart(parts: Part[], query: string): Part | undefined {
 async function mainSource(appDir: string): Promise<string> {
 	const file = Bun.file(join(appDir, 'lib', 'main.dart'));
 	return (await file.exists()) ? await file.text() : '';
+}
+
+/** Every Dart file in the app's `lib/`, by its path relative to the app: `lib/app_list.dart`. */
+export async function appSources(appDir: string): Promise<Map<string, string>> {
+	const sources = new Map<string, string>();
+	for await (const path of new Bun.Glob('lib/**/*.dart').scan({ cwd: appDir })) {
+		sources.set(path.replaceAll('\\', '/'), await Bun.file(join(appDir, path)).text());
+	}
+	return sources;
+}
+
+/** The code of the app besides some of its files, for {@link usedIn}. */
+export function besides(sources: Map<string, string>, ...files: string[]): string {
+	return [...sources]
+		.filter(([path]) => !files.includes(path))
+		.map(([, source]) => source)
+		.join('\n');
+}
+
+/**
+ * Whether the rest of the app hands something to SmartifyOS. `lib/main.dart` does that for what
+ * the CLI makes (`TripComputerWindow.appListEntry`), but an owner may do it any other way, like
+ * an `AppListEntry` of their own in another file that opens the window, so anything using its
+ * name counts: a warning that is wrong is worse than one left out.
+ */
+export function usedIn(rest: string, symbol: string | null): boolean {
+	const name = symbol?.split('.')[0];
+	return name !== undefined && new RegExp(`\\b${name}\\b`).test(codeOnly(rest));
 }
 
 /** The app's package name, which its own imports start with. */
@@ -620,8 +797,9 @@ export async function createPart(
 		);
 	}
 
-	const source = await Bun.file(join(appDir, file)).text();
-	return { part: readPart(kind, file, source, await mainSource(appDir)), manual };
+	const sources = await appSources(appDir);
+	const source = sources.get(file) ?? '';
+	return { part: readPart(kind, file, source, besides(sources, file), sources), manual };
 }
 
 /** Renames a part or gives it another icon, in its file. Undefined is "leave it". */
@@ -630,6 +808,8 @@ export async function editPart(
 	part: Part,
 	change: { name?: string; icon?: string },
 ): Promise<Part> {
+	if (change.name !== undefined && !part.canChange.name) throw cannotEdit(part, 'name');
+	if (change.icon !== undefined && !part.canChange.icon) throw cannotEdit(part, 'icon');
 	const path = join(appDir, part.file);
 	const before = await Bun.file(path).text();
 	let source = before;
@@ -654,17 +834,24 @@ export async function editPart(
 	}
 
 	await writeDart(path, before, source);
-	return readPart(part.kind, part.file, await Bun.file(path).text(), await mainSource(appDir));
+	const sources = await appSources(appDir);
+	const written = sources.get(part.file) ?? source;
+	return readPart(part.kind, part.file, written, besides(sources, part.file), sources);
 }
 
 function cannotEdit(part: Part, what: string): CliError {
 	return new CliError(`The ${what} of ${part.name ?? part.file} is not where it can be changed.`, {
-		hint: `Change it by hand in ${part.file}.`,
+		hint: `Change it by hand in ${part.nameAt.file}, line ${part.nameAt.line}.`,
 	});
 }
 
 /** Takes a part out of the app: out of `lib/main.dart`, and its file. */
 export async function removePart(appDir: string, part: Part): Promise<void> {
+	if (!part.canChange.remove) {
+		throw new CliError(`${part.name ?? part.file} cannot be taken out by itself.`, {
+			hint: `More of your app than lib/main.dart uses it, take it out by hand starting in ${part.file}.`,
+		});
+	}
 	const mainPath = join(appDir, 'lib', 'main.dart');
 	const before = await mainSource(appDir);
 	let source = part.symbol ? unregister(before, part.kind, part.symbol) : before;

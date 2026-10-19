@@ -119,6 +119,8 @@ smartify-os window edit "Trip computer" --icon speed
 smartify-os window remove "Trip computer"
 ```
 
+`list` also finds the ones you wrote yourself some other way, several in a list of your own say. Those are listed, but the CLI leaves changing them to you.
+
 Settings pages of your own are made the same way, a row at a time. A switch or a choice keeps its value between drives, and the rest of your app reads it as `seatHeatingDriverSeat.value`. A button, or a switch you want to do something, runs a function of yours that starts out in the page's file:
 
 ```bash

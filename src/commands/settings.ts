@@ -203,7 +203,7 @@ const listCommand: Command = {
 	name: 'list',
 	aliases: ['ls'],
 	summary: 'List the settings pages of your app',
-	description: `Lists your own settings pages in ${settingsFolder}/, with their rows. Run it in your car's app folder.`,
+	description: `Lists your own settings pages, the ones in ${settingsFolder}/ and any written some other way elsewhere in lib/, with their rows. Run it in your car's app folder.`,
 	examples: [`${binaryName} settings list`],
 	async run() {
 		const app = await requireCar();

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CliError } from '../../utils/errors.ts';
@@ -9,21 +9,27 @@ import {
 	addImportLine,
 	appendElement,
 	argumentValue,
+	callsAt,
 	closingBracket,
 	codeOnly,
+	declarationAround,
 	elements,
+	keepOnlyCall,
 	onlyMatch,
 	removeArgument,
 	removeElement,
 	setArgument,
 } from './main-dart.ts';
 import {
+	appSources,
+	besides,
 	type PartNames,
 	packageName,
 	partNames,
 	type RegisterSpec,
 	registerIn,
 	unregisterIn,
+	usedIn,
 } from './parts.ts';
 
 /**
@@ -132,13 +138,23 @@ export interface SettingsPageInfo {
 	file: string;
 	/** What `lib/main.dart` hands to SmartifyOS: `seatHeatingPage`. */
 	symbol: string | null;
+	/** Whether the app hands it to SmartifyOS, in `lib/main.dart` or anywhere else. */
 	registered: boolean;
+	/**
+	 * Whether the CLI can change it: true for one in a file of its own, the way the CLI makes
+	 * them, false for one written some other way (several in a list, say), which is listed but
+	 * left to its owner.
+	 */
+	editable: boolean;
 	rows: SettingsRow[];
 	/** Where its rows are, counted from 1. */
 	line: number;
 }
 
 const pageCall = /\bSettingsPage\s*\(/;
+
+/** Internal: any page, a custom one (with a body instead of rows) too. */
+const anyPageCall = /\bSettingsPage\s*(?:\.\s*custom\s*)?\(/;
 
 /** Internal: the line `index` is on, counted from 1. */
 function lineAt(source: string, index: number): number {
@@ -289,7 +305,7 @@ function entriesOf(
 	source: string,
 ): { open: number; rows: { start: number; end: number }[] } | undefined {
 	const code = codeOnly(source);
-	const call = onlyMatch(code, pageCall);
+	const call = onlyMatch(code, anyPageCall);
 	if (!call) return undefined;
 	const open = call.index + call[0].length - 1;
 	const close = closingBracket(code, open);
@@ -299,14 +315,14 @@ function entriesOf(
 	return { open: listOpen, rows: elements(code, listOpen, closingBracket(code, listOpen)) };
 }
 
-/** Reads a page back from its file. */
-export function readPage(file: string, source: string, main: string): SettingsPageInfo {
+/** Reads a page back from its file, with `rest` the code of the app besides it. */
+export function readPage(file: string, source: string, rest: string): SettingsPageInfo {
 	const code = codeOnly(source);
 	const symbol =
 		/\b(?:final|const)\s+([A-Za-z_]\w*)\s*=\s*SettingsPage\s*\(/.exec(code)?.[1] ?? null;
 	const text = (name: string) =>
-		dartStringValue(argumentValue(source, pageCall, name) ?? '') ?? null;
-	const parentCode = argumentValue(source, pageCall, 'parent');
+		dartStringValue(argumentValue(source, anyPageCall, name) ?? '') ?? null;
+	const parentCode = argumentValue(source, anyPageCall, 'parent');
 	const builtIn = /^SettingsPages\.(\w+)$/.exec(parentCode ?? '')?.[1];
 	const parent =
 		parentCode === null
@@ -315,34 +331,69 @@ export function readPage(file: string, source: string, main: string): SettingsPa
 				? (builtInPages.find((page) => page.constant === builtIn)?.id ?? null)
 				: (dartStringValue(parentCode ?? '') ?? null);
 	const entries = entriesOf(source);
+	const call = onlyMatch(code, anyPageCall);
 	return {
 		id: text('id'),
 		title: text('title'),
 		subtitle: text('subtitle'),
-		icon: iconName(argumentValue(source, pageCall, 'icon')),
+		icon: iconName(argumentValue(source, anyPageCall, 'icon')),
 		parent,
 		file,
 		symbol,
-		registered: symbol !== null && new RegExp(`\\b${symbol}\\b`).test(codeOnly(main)),
+		registered: usedIn(rest, symbol),
+		editable: true,
 		rows: entries ? entries.rows.map((row) => readRow(source, row.start, row.end)) : [],
-		line: entries ? lineAt(source, entries.open) : 1,
+		line: entries ? lineAt(source, entries.open) : call ? lineAt(source, call.index) : 1,
 	};
 }
 
-/** Every page of the car's own, in order of file name. */
+/**
+ * Reads a page written some other way than the CLI writes them: the one at `at` in `file`, one of
+ * several there or in a list of the owner's own. It is listed, but the CLI changes nothing of it.
+ */
+export function readPageAt(
+	file: string,
+	source: string,
+	at: number,
+	rest: string,
+): SettingsPageInfo {
+	const page = readPage(file, keepOnlyCall(source, anyPageCall, at), rest);
+	// What is handed to SmartifyOS: the list it is in, `miataSettingsPages`.
+	const symbol = declarationAround(codeOnly(source), at);
+	return {
+		...page,
+		symbol,
+		// Not in a declaration, it is likely handed over right where it is written.
+		registered: symbol === null || file === 'lib/main.dart' || usedIn(rest, symbol),
+		editable: false,
+	};
+}
+
+/**
+ * Every page of the car's own: first the ones in files of their own in `lib/settings/`, the way
+ * the CLI makes them, then any written some other way anywhere in `lib/`.
+ */
 export async function listPages(appDir: string): Promise<SettingsPageInfo[]> {
-	const folder = join(appDir, settingsFolder);
-	if (!existsSync(folder)) return [];
-	const main = await mainSource(appDir);
+	const sources = await appSources(appDir);
+	const folder = `${settingsFolder}/`;
 	const pages: SettingsPageInfo[] = [];
-	for (const name of readdirSync(folder)
-		.filter((file) => file.endsWith('.dart'))
-		.sort()) {
-		const file = `${settingsFolder}/${name}`;
-		const page = readPage(file, await Bun.file(join(appDir, file)).text(), main);
-		if (page.symbol) pages.push(page);
+	const others: SettingsPageInfo[] = [];
+	for (const file of [...sources.keys()].sort()) {
+		const source = sources.get(file) ?? '';
+		const code = codeOnly(source);
+		const found = callsAt(code, anyPageCall);
+		const rest = besides(sources, file);
+		const own = file.startsWith(folder) && !file.slice(folder.length).includes('/');
+		if (own && found.length === 1 && onlyMatch(code, pageCall)) {
+			const page = readPage(file, source, rest);
+			if (page.symbol) {
+				pages.push(page);
+				continue;
+			}
+		}
+		for (const at of found) others.push(readPageAt(file, source, at, rest));
 	}
-	return pages;
+	return [...pages, ...others];
 }
 
 /** The page with this id, title or file name. */
@@ -822,7 +873,7 @@ export async function createPage(
 		);
 	}
 	const source = await Bun.file(join(appDir, file)).text();
-	return { page: readPage(file, source, await mainSource(appDir)), manual };
+	return { page: readPage(file, source, besides(await appSources(appDir), file)), manual };
 }
 
 /** Changes a page, a row of it, or its rows, in its file, and reads it back. */
@@ -834,6 +885,7 @@ export async function editPageFile(
 		elsewhere: (name: string) => boolean,
 	) => { source: string; kept?: string[] },
 ): Promise<PageChanged> {
+	if (!page.editable) throw notEditable(page);
 	const path = join(appDir, page.file);
 	const before = await Bun.file(path).text();
 	// Which names other files read, asked up front since the edit itself is not async.
@@ -842,11 +894,22 @@ export async function editPageFile(
 	for (const name of names) if (await readElsewhere(appDir, page.file, name)) elsewhere.add(name);
 	const { source, kept = [] } = edit(before, (name) => elsewhere.has(name));
 	await writeDart(path, before, source);
-	return { page: readPage(page.file, await Bun.file(path).text(), await mainSource(appDir)), kept };
+	const rest = besides(await appSources(appDir), page.file);
+	return { page: readPage(page.file, await Bun.file(path).text(), rest), kept };
+}
+
+function notEditable(page: SettingsPageInfo): CliError {
+	return new CliError(
+		`${page.title ?? page.id ?? page.file} is not written the way the CLI can change it.`,
+		{
+			hint: `Change it by hand in ${page.file}, line ${page.line}.`,
+		},
+	);
 }
 
 /** Takes a page out of the app: out of `lib/main.dart`, and its file. */
 export async function removePage(appDir: string, page: SettingsPageInfo): Promise<void> {
+	if (!page.editable) throw notEditable(page);
 	const mainPath = join(appDir, 'lib', 'main.dart');
 	const before = await mainSource(appDir);
 	let source = page.symbol ? unregisterIn(before, settingsRegister, page.symbol) : before;

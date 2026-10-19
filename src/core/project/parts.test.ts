@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { partNames, partSource, readPart, register, unregister } from './parts.ts';
+import { partNames, partSource, readCall, readPart, register, unregister } from './parts.ts';
 
 const main = `import 'package:smartify_os_core/core.dart';
 
@@ -86,5 +86,65 @@ describe('readPart', () => {
 		);
 		expect(widget.registered).toBe(true);
 		expect(widget.symbol).toBe('oilTemperatureWidget');
+	});
+
+	test('counts a window handed over some other way than lib/main.dart', () => {
+		const source = partSource('window', 'fullscreen', partNames('Trip computer'), 'route');
+		const appList = `final entries = [
+  AppListEntry(
+    id: 'trip',
+    onOpen: (context) => SmartifyOsNavigator.push(context, const TripComputerWindow()),
+  ),
+];`;
+		expect(readPart('window', 'lib/x.dart', source, appList).registered).toBe(true);
+		expect(readPart('window', 'lib/x.dart', source, main).registered).toBe(false);
+		// A comment that names it is not using it.
+		const comment = '// TripComputerWindow is not in the list yet.';
+		expect(readPart('window', 'lib/x.dart', source, comment).registered).toBe(false);
+	});
+});
+
+describe('readCall', () => {
+	const list = `const counterId = 'counter';
+
+/// The car's own widgets.
+final carWidgets = <HomeWidget>[
+  HomeWidget(
+    id: counterId,
+    title: 'Tap counter',
+    icon: const Icon(Icons.exposure_plus_1),
+    builder: (home) => const Text('0'),
+  ),
+  HomeWidget.pinned(
+    id: 'engine',
+    title: 'Engine',
+    icon: const Icon(Icons.speed),
+    builder: (home) => const Text('RPM'),
+  ),
+];
+`;
+	const at = (n: number) => [...list.matchAll(/HomeWidget(\.pinned)?\(/g)][n]?.index ?? -1;
+
+	test('reads each of several in a list, and changes none of them', () => {
+		const counter = readCall('widget', 'lib/home_widgets.dart', list, at(0), 'widgets: carWidgets');
+		expect(counter).toMatchObject({
+			id: 'counter',
+			name: 'Tap counter',
+			icon: 'exposure_plus_1',
+			variant: 'card',
+			symbol: 'carWidgets',
+			registered: true,
+			canChange: { name: false, icon: false, remove: false },
+			line: 5,
+		});
+		const engine = readCall('widget', 'lib/home_widgets.dart', list, at(1), '');
+		expect(engine).toMatchObject({ id: 'engine', name: 'Engine', variant: 'pinned', line: 11 });
+		expect(engine.registered).toBe(false);
+	});
+
+	test('a part made by the CLI can be changed', () => {
+		const source = partSource('tile', 'toggle', partNames('Interior light'), 'lightbulb');
+		const tile = readPart('tile', 'lib/quick_settings/interior_light_tile.dart', source, '');
+		expect(tile.canChange).toEqual({ name: true, icon: true, remove: true });
 	});
 });

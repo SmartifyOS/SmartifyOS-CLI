@@ -107,6 +107,54 @@ export function closingBracket(code: string, open: number): number {
 	return -1;
 }
 
+/** Internal: where every call matching `call` starts, in code from {@link codeOnly}. */
+export function callsAt(code: string, call: RegExp): number[] {
+	return [...code.matchAll(new RegExp(call.source, 'g'))].map((match) => match.index ?? 0);
+}
+
+/**
+ * Internal: the source with every call matching `call` blanked out but the one starting at `at`,
+ * so that one is the only one for the helpers that read a call's arguments. Positions and lines
+ * stay the same.
+ */
+export function keepOnlyCall(source: string, call: RegExp, at: number): string {
+	const code = codeOnly(source);
+	let kept = source;
+	for (const match of code.matchAll(new RegExp(call.source, 'g'))) {
+		const start = match.index ?? 0;
+		if (start === at) continue;
+		const close = closingBracket(code, start + match[0].length - 1);
+		const end = close === -1 ? code.length : close + 1;
+		// One the kept call is inside of stays, or the kept one would go with it.
+		if (start < at && at < end) continue;
+		kept = kept.slice(0, start) + kept.slice(start, end).replace(/[^\n]/g, ' ') + kept.slice(end);
+	}
+	return kept;
+}
+
+/**
+ * Internal: the name of the top level declaration `at` is inside of, `miataTiles` for a tile in
+ * `final miataTiles = [...]`. Null when it is not inside one, in a function say.
+ */
+export function declarationAround(code: string, at: number): string | null {
+	let found: RegExpExecArray | undefined;
+	for (const match of code
+		.slice(0, at)
+		.matchAll(/^(?:final|const|var)\b[^=;{}()]*?\b([A-Za-z_]\w*)\s*=/gm)) {
+		found = match;
+	}
+	if (!found) return null;
+	// It has to still be going at `at`: no semicolon outside of brackets in between.
+	let depth = 0;
+	for (let i = (found.index ?? 0) + found[0].length; i < at; i++) {
+		const char = code[i];
+		if (char === '(' || char === '[' || char === '{') depth++;
+		else if (char === ')' || char === ']' || char === '}') depth--;
+		else if (char === ';' && depth === 0) return null;
+	}
+	return found[1] ?? null;
+}
+
 /** Internal: where each element of a bracketed list starts and ends, commas left out. */
 export function elements(
 	code: string,

@@ -192,7 +192,7 @@ function listCommand(kind: PartKind): Command {
 		name: 'list',
 		aliases: ['ls'],
 		summary: `List the ${say.plural} of your app`,
-		description: `Lists the ${say.plural} in lib/${kinds[kind].folder}/, with their files and whether lib/main.dart hands them to SmartifyOS. Run it in your car's app folder.`,
+		description: `Lists the ${say.plural} of your app, the ones in lib/${kinds[kind].folder}/ and any written some other way elsewhere in lib/, with their files and whether your app hands them to SmartifyOS. Run it in your car's app folder.`,
 		examples: [`${binaryName} ${kind} list`],
 		async run() {
 			const app = await requireCar();
@@ -207,7 +207,7 @@ function listCommand(kind: PartKind): Command {
 						parts
 							.map(
 								(part) =>
-									`${part.name ?? part.id ?? part.file}  ${theme.dim(part.file)}${part.registered ? '' : theme.dim('  (not in lib/main.dart)')}`,
+									`${part.name ?? part.id ?? part.file}  ${theme.dim(part.file)}${part.registered ? '' : theme.dim('  (nothing in your app uses it)')}`,
 							)
 							.join('\n'),
 						`${say.title}s`,

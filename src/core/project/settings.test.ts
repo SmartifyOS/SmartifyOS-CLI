@@ -7,6 +7,7 @@ import {
 	moveRow,
 	pageSource,
 	readPage,
+	readPageAt,
 	removeRow,
 } from './settings.ts';
 
@@ -134,5 +135,41 @@ describe('moveRow and changePage', () => {
 		expect(() => changePage(source, read(source), { parent: 'seats' })).toThrow(
 			'cannot go in itself',
 		);
+	});
+});
+
+describe('readPageAt', () => {
+	test('reads each of several pages in a list, which the CLI does not change', () => {
+		const source = `final carPages = <SettingsPage>[
+  SettingsPage(
+    id: 'seats',
+    parent: SettingsPages.vehicle,
+    title: 'Seat heating',
+    icon: const Icon(Icons.event_seat),
+    entries: [
+      SettingsEntry.toggle(title: 'Driver seat', initialValue: false, onChanged: (on) {}),
+    ],
+  ),
+  SettingsPage.custom(
+    id: 'gauges',
+    title: 'Gauges',
+    body: (settings) => const Text('Gauges'),
+  ),
+];
+`;
+		const [seats, gauges] = [...source.matchAll(/SettingsPage(\.custom)?\(/g)].map((match) =>
+			readPageAt('lib/settings_pages.dart', source, match.index ?? 0, 'pages: carPages'),
+		);
+		expect(seats).toMatchObject({
+			id: 'seats',
+			title: 'Seat heating',
+			parent: 'vehicle',
+			icon: 'event_seat',
+			symbol: 'carPages',
+			registered: true,
+			editable: false,
+		});
+		expect(seats?.rows.map((row) => row.title)).toEqual(['Driver seat']);
+		expect(gauges).toMatchObject({ id: 'gauges', title: 'Gauges', rows: [], line: 11 });
 	});
 });
