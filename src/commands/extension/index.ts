@@ -7,12 +7,13 @@ import { extensionListCommand } from './list.ts';
 import { extensionReleaseCommand } from './release.ts';
 import { extensionRemoveCommand } from './remove.ts';
 import { extensionRunCommand } from './run.ts';
+import { extensionSettingsCommand } from './settings.ts';
 import { extensionUpdateCommand } from './update.ts';
 
 /**
  * Everything about extensions, for a car's owner and for someone making one.
  *
- * The first four act on the car, like every other command, the last three on the
+ * The first five act on the car, like every other command, the last three on the
  * extension being made.
  */
 export const extensionCommand: Command = {
@@ -31,6 +32,7 @@ export const extensionCommand: Command = {
 		extensionUpdateCommand,
 		extensionRemoveCommand,
 		extensionListCommand,
+		extensionSettingsCommand,
 		extensionCreateCommand,
 		extensionRunCommand,
 		extensionReleaseCommand,

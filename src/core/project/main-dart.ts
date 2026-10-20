@@ -1,3 +1,5 @@
+import { writeDart } from './dart-file.ts';
+
 /**
  * Switching an extension on and off in the car's `lib/main.dart`.
  *
@@ -105,6 +107,17 @@ export function closingBracket(code: string, open: number): number {
 		}
 	}
 	return -1;
+}
+
+/** How many brackets are open at `to`, counting from `from`, in code only text. */
+export function depthAt(code: string, from: number, to: number): number {
+	let depth = 0;
+	for (let i = from; i < to; i++) {
+		const char = code[i];
+		if (char === '(' || char === '[' || char === '{') depth++;
+		else if (char === ')' || char === ']' || char === '}') depth--;
+	}
+	return depth;
 }
 
 /** Internal: where every call matching `call` starts, in code from {@link codeOnly}. */
@@ -251,10 +264,23 @@ export function setArgument(
 	value: string,
 	options: { before?: string; comment?: string[] } = {},
 ): string | undefined {
-	const code = codeOnly(source);
-	const match = onlyMatch(code, call);
+	const match = onlyMatch(codeOnly(source), call);
 	if (!match) return undefined;
-	const open = match.index + match[0].length - 1;
+	return setArgumentAt(source, match.index + match[0].length - 1, name, value, options);
+}
+
+/**
+ * {@link setArgument} for the call whose `(` is at `open`, for a call that is found some other
+ * way than by its name: one element of a list, a config inside another.
+ */
+export function setArgumentAt(
+	source: string,
+	open: number,
+	name: string,
+	value: string,
+	options: { before?: string; comment?: string[] } = {},
+): string | undefined {
+	const code = codeOnly(source);
 	const close = closingBracket(code, open);
 	if (close === -1) return undefined;
 
@@ -309,6 +335,8 @@ function uncomment(
 	const start = open + 1 + line.index;
 	const before = code.slice(open + 1, start).trimEnd();
 	if (before && !before.endsWith(',')) return undefined;
+	// Directly inside the call, not inside one nested in it that has an argument of that name.
+	if (depthAt(code, open + 1, start) !== 0) return undefined;
 	const end = start + line[0].length;
 	return `${source.slice(0, start)}${line[1]}${name}: ${value},${source.slice(end)}`;
 }
@@ -323,10 +351,19 @@ function callArguments(
 ):
 	| { code: string; open: number; close: number; named: (name: string) => Span | undefined }
 	| undefined {
-	const code = codeOnly(source);
-	const match = onlyMatch(code, call);
+	const match = onlyMatch(codeOnly(source), call);
 	if (!match) return undefined;
-	const open = match.index + match[0].length - 1;
+	return callArgumentsAt(source, match.index + match[0].length - 1);
+}
+
+/** Internal: {@link callArguments} for the call whose `(` is at `open`. */
+function callArgumentsAt(
+	source: string,
+	open: number,
+):
+	| { code: string; open: number; close: number; named: (name: string) => Span | undefined }
+	| undefined {
+	const code = codeOnly(source);
 	const close = closingBracket(code, open);
 	if (close === -1) return undefined;
 	const items = elements(code, open, close);
@@ -355,7 +392,11 @@ export function argumentValue(
 ): string | null | undefined {
 	const found = callArguments(source, call);
 	if (!found) return undefined;
-	const item = found.named(name);
+	return argumentText(source, found.named(name));
+}
+
+/** Internal: the value of a named argument as it is written, comments left out. */
+function argumentText(source: string, item: Span | undefined): string | null {
 	if (!item) return null;
 	const text = codeOnly(source.slice(item.start, item.end), { keepStrings: true });
 	return text
@@ -372,7 +413,14 @@ export function argumentValue(
  * call cannot be found without doubt.
  */
 export function removeArgument(source: string, call: RegExp, name: string): string | undefined {
-	const found = callArguments(source, call);
+	const match = onlyMatch(codeOnly(source), call);
+	if (!match) return undefined;
+	return removeArgumentAt(source, match.index + match[0].length - 1, name);
+}
+
+/** {@link removeArgument} for the call whose `(` is at `open`. */
+export function removeArgumentAt(source: string, open: number, name: string): string | undefined {
+	const found = callArgumentsAt(source, open);
 	if (!found) return undefined;
 	const { code, close } = found;
 	const item = found.named(name);
@@ -571,7 +619,7 @@ export async function switchOnInFile(
 	const edited = switchOn(source, entry);
 	if (edited === undefined) return { kind: 'manual', entry };
 
-	await Bun.write(path, edited);
+	await writeDart(path, source, edited);
 	return { kind: 'done', entry };
 }
 
@@ -590,6 +638,6 @@ export async function switchOffInFile(
 	const edited = switchOff(source, entry);
 	if (edited === undefined) return { kind: 'manual', entry };
 
-	await Bun.write(path, edited);
+	await writeDart(path, source, edited);
 	return { kind: 'done', entry };
 }

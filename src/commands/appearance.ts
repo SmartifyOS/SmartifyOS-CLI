@@ -6,6 +6,7 @@ import {
 	carLooks,
 	changeAppearance,
 	readAppearance,
+	readPartNames,
 	themes,
 } from '../core/project/appearance.ts';
 import { type BarChoice, type DriverSide, layouts } from '../core/project/create.ts';
@@ -78,7 +79,15 @@ export const appearanceCommand: Command = {
 
 		if (flags.show === true || (nothingGiven && (isJsonMode() || !isInteractive()))) {
 			if (!isJsonMode()) note(describe(current), 'How your car looks');
-			return { changed: false, appearance: current, manual: [], assets: [], restart: false };
+			const partNames = await readPartNames(app.dir, current.car);
+			return {
+				changed: false,
+				appearance: current,
+				manual: [],
+				assets: [],
+				restart: false,
+				partNames,
+			};
 		}
 
 		intro('Change how the screen looks');
@@ -86,7 +95,7 @@ export const appearanceCommand: Command = {
 
 		const result = await changeAppearance(app.dir, change);
 		report(result);
-		return result;
+		return { ...result, partNames: await readPartNames(app.dir, result.appearance.car) };
 	},
 };
 

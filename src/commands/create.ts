@@ -26,6 +26,7 @@ import {
 	renameCarText,
 	setUpMain,
 } from '../core/project/create.ts';
+import { formatDart } from '../core/project/dart-file.ts';
 import { findProject } from '../core/project/find.ts';
 import {
 	appTemplateFolder,
@@ -552,6 +553,7 @@ async function createFromTemplate(
 	const mainPath = join(target, 'lib', 'main.dart');
 	const main = setUpMain(await Bun.file(mainPath).text(), { ...setup, looks });
 	await Bun.write(mainPath, main.source);
+	await formatDart([mainPath]);
 	return main.manual;
 }
 

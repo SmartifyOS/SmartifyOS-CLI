@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { assetPath, readAppearance, setAppearance } from './appearance.ts';
+import {
+	assetPath,
+	drawingNames,
+	modelNames,
+	readAppearance,
+	setAppearance,
+} from './appearance.ts';
 
 const main = `import 'package:flutter/material.dart';
 import 'package:smartify_os_core/core.dart';
@@ -120,5 +126,29 @@ describe('assetPath', () => {
 			asset: 'assets/my_golf.glb',
 			copy: true,
 		});
+	});
+});
+
+describe('part names', () => {
+	test('reads the objects of a binary glTF model', () => {
+		const json = new TextEncoder().encode(
+			JSON.stringify({
+				nodes: [{ name: 'Body' }, { name: 'LeftFrontWheel' }, {}, { name: 'Body' }],
+			}),
+		);
+		const bytes = new Uint8Array(20 + json.length);
+		const view = new DataView(bytes.buffer);
+		view.setUint32(0, 0x46546c67, true);
+		view.setUint32(4, 2, true);
+		view.setUint32(8, bytes.length, true);
+		view.setUint32(12, json.length, true);
+		view.setUint32(16, 0x4e4f534a, true);
+		bytes.set(json, 20);
+		expect(modelNames(bytes)).toEqual(['Body', 'LeftFrontWheel']);
+	});
+
+	test('reads the named groups of a drawing, not the pivots', () => {
+		const svg = `<svg><g id="Layer1"><g id='LeftDoor'><circle id="LeftDoor_pivot"/></g><g id="FrontLeftWheel"><g id="pivot"/></g></g></svg>`;
+		expect(drawingNames(svg)).toEqual(['Layer1', 'LeftDoor', 'FrontLeftWheel']);
 	});
 });

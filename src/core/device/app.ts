@@ -1,6 +1,7 @@
 import { readdir } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 import { analyzeErrors, packageConfigPath } from '../flutter.ts';
+import { formatDart } from '../project/dart-file.ts';
 import {
 	addImportLine,
 	appendElement,
@@ -109,6 +110,7 @@ export async function addDeviceToApp(appDir: string, device: DeviceDefinition): 
 		if (after.length > had.length) return manual('does-not-build');
 		await Bun.write(placed.file, placed.edited);
 	}
+	await formatDart([placed.file]);
 	return { kind: 'done', file: relative(appDir, placed.file) };
 }
 

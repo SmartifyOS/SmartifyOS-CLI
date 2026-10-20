@@ -1,19 +1,9 @@
 import { run } from '../process.ts';
 
 /**
- * Writing Dart into a car's app the way its owner would: run through `dart format` afterwards,
- * but only a file that was formatted before, so an owner's own style is left alone.
+ * Writing Dart into a car's app the way its owner would: every file the CLI writes or changes is
+ * run through `dart format` afterwards, so what it added reads like the rest of the file.
  */
-
-/** Whether `dart format` would leave a file as it is. False when there is no Dart to ask. */
-export async function isFormatted(path: string): Promise<boolean> {
-	try {
-		const result = await run('dart', ['format', '--output=none', '--set-exit-if-changed', path]);
-		return result.code === 0;
-	} catch {
-		return false;
-	}
-}
 
 /** Formats files with `dart format`, quietly doing nothing when there is no Dart. */
 export async function formatDart(paths: string[]): Promise<void> {
@@ -25,10 +15,9 @@ export async function formatDart(paths: string[]): Promise<void> {
 	}
 }
 
-/** Writes a Dart file that was `before`, formatted again afterwards when it was before. */
+/** Writes a Dart file that was `before`, and formats it. Nothing is written when nothing changed. */
 export async function writeDart(path: string, before: string, after: string): Promise<void> {
 	if (after === before) return;
-	const formatted = await isFormatted(path);
 	await Bun.write(path, after);
-	if (formatted) await formatDart([path]);
+	await formatDart([path]);
 }

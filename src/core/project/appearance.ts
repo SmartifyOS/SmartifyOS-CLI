@@ -424,6 +424,59 @@ export async function placeAsset(appDir: string, file: string): Promise<string> 
 	return asset;
 }
 
+/** The names of the parts of the car's files, which its moving parts are named by. */
+export interface PartNames {
+	/** Every object of the 3D model, in the order the model has them. */
+	model3D: string[];
+	/** Every group of the drawing with an id, which is the name its layer had. */
+	drawing2D: string[];
+}
+
+/**
+ * Reads what the parts of the car's 3D model and drawing are called, for picking the wheels
+ * and the steering wheel by name. A file that is not there, or cannot be read, has none.
+ */
+export async function readPartNames(appDir: string, car: Appearance['car']): Promise<PartNames> {
+	const names: PartNames = { model3D: [], drawing2D: [] };
+	try {
+		if (car.model3D) names.model3D = modelNames(await Bun.file(join(appDir, car.model3D)).bytes());
+	} catch {
+		// Not a model it can read, which SmartifyOS will say when it loads it.
+	}
+	try {
+		if (car.drawing2D) {
+			names.drawing2D = drawingNames(await Bun.file(join(appDir, car.drawing2D)).text());
+		}
+	} catch {
+		// The same for the drawing.
+	}
+	return names;
+}
+
+/** Internal: the names of the nodes of a `.glb` file, or of a `.gltf` file's JSON. */
+export function modelNames(bytes: Uint8Array): string[] {
+	const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+	let json: string;
+	if (bytes.byteLength >= 20 && view.getUint32(0, true) === 0x46546c67) {
+		// glTF binary: a 12 byte header, then the JSON chunk with its length and type first.
+		const length = view.getUint32(12, true);
+		json = new TextDecoder().decode(bytes.subarray(20, 20 + length));
+	} else json = new TextDecoder().decode(bytes);
+	const nodes = (JSON.parse(json) as { nodes?: { name?: unknown }[] }).nodes ?? [];
+	const names = nodes
+		.map((node) => node.name)
+		.filter((name): name is string => typeof name === 'string');
+	return [...new Set(names)];
+}
+
+/** Internal: the ids of the groups of an SVG file, the shapes a part turns around left out. */
+export function drawingNames(svg: string): string[] {
+	const names = [...svg.matchAll(/<g\b[^>]*?\sid\s*=\s*(["'])(.*?)\1/g)]
+		.map((match) => match[2] ?? '')
+		.filter((name) => name && !/(^|_)pivot$/i.test(name));
+	return [...new Set(names)];
+}
+
 /** What {@link changeAppearance} did. */
 export interface AppearanceChanged {
 	changed: boolean;
@@ -445,8 +498,7 @@ export interface AppearanceChanged {
  * pubspec, and writes the rest into `lib/main.dart`.
  *
  * Pictures of the car are given as files on this computer, which become paths inside the app.
- * `lib/main.dart` is formatted again afterwards when it was formatted before, so a change reads
- * like the rest of it, and an owner's own style is left alone.
+ * `lib/main.dart` is run through `dart format` afterwards, so a change reads like the rest of it.
  */
 export async function changeAppearance(
 	appDir: string,

@@ -108,6 +108,30 @@ smartify-os about --extra "VIN=WVWZZZ1JZXW000001"
 
 Both write into `lib/main.dart` the way you would by hand, and leave alone anything you wrote there that they cannot read. A 3D model, drawing or picture is copied into your app's `assets` folder.
 
+Everything else your app hands SmartifyOS in `lib/main.dart` (how the 3D model sits and which of its parts move, the info display, Bluetooth, the reverse camera and the rest) is a setting `config` reads and changes by its key, like `git config`:
+
+```bash
+smartify-os config                                  # everything that is set, the rest is the default
+smartify-os config --list                           # every setting there is, with its default
+smartify-os config car.model3D.scale 0.8
+smartify-os config --set bluetooth.autoConnect=off --set reverseCamera.guides.carWidth=1.68
+smartify-os config --unset car.model3D.scale        # back to SmartifyOS's own
+smartify-os config --add layouts.hiddenLayouts=portrait
+smartify-os config --add 'infoDisplay.values={"id":"rpm","label":"Engine speed","unit":"RPM"}'
+smartify-os config --move 'infoDisplay.views[2]=0'  # an element of a list by its place
+smartify-os config --remove 'car.model3D.parts.rollingWheels[3]'
+```
+
+A setting written as code it cannot read (a variable, say) is shown as code, and a change that would go inside it is printed for you to make by hand.
+
+An extension's own settings, the arguments its class takes where `lib/main.dart` switches it on, work the same way. What each one is comes from the extension's code and its doc comments:
+
+```bash
+smartify-os extension settings voice_assistant                      # every setting, with its default
+smartify-os extension settings voice_assistant wakeWord "Hey Miata"
+smartify-os extension settings voice_assistant --unset duckLevel
+```
+
 Your own windows, quick settings tiles and home screen widgets each start as a file the CLI makes for you, already handed to SmartifyOS in `lib/main.dart`. You only fill in what it shows or does:
 
 ```bash
@@ -265,8 +289,8 @@ While `run` runs the car's app, `call` reaches SmartifyOS inside it, with `param
 
 | Call        | What it does                                                                     |
 | ----------- | -------------------------------------------------------------------------------- |
-| `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, the `about` page, and every page of Settings a page of its own can go in (`settingsPages`) |
-| `configure` | Changes what the car starts with, any of `layout`, `theme`, `driverSide`, `bar` (`infoDisplay`, `dock`, `infoDisplayAndDock`), `carLook` (`model3D`, `drawing2D`, `image`), `deviceName`, `model` and `extra` (an object). An empty string goes back to SmartifyOS's own. The driver's own pick of the same thing is forgotten, and the reply is the same as `describe`. It does not change `lib/main.dart`, `appearance` and `about` do that |
+| `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, the `about` page, every page of Settings a page of its own can go in (`settingsPages`), and which bigger configs `configure` can change while it runs (`live`) |
+| `configure` | Changes what the car starts with, any of `layout`, `theme`, `driverSide`, `bar` (`infoDisplay`, `dock`, `infoDisplayAndDock`), `carLook` (`model3D`, `drawing2D`, `image`), `deviceName`, `model` and `extra` (an object), and the configs `live` names, as JSON: `model3D` (any of `scale`, `lookAtHeight`, `offset` and `rotation` as `{x, y, z}`, and `render` with `exposure`, `environmentIntensity` and `vignette`) and `infoDisplay` (`values`, `views` and `hiddenValues`, each whole). An empty string goes back to SmartifyOS's own. The driver's own pick of the same thing is forgotten, and the reply is the same as `describe`. It does not change `lib/main.dart`, `appearance` and `about` do that |
 | `screenshot` | What is on screen, as a `png` in base64 with its `width` and `height` |
 | `show`      | Puts something on screen the way the driver finds it: `kind` (`window`, `tile`, `widget` or `settings`) with its `id`. A window opens, the quick settings come down, a card comes back, a settings page opens |
 | `canDescribe` | The car's CAN bus: its `devices` (`node`, `name`, `title`, whether it is `online`, and whether it is `pretending` for you) and `messages` (`id`, `name`, the `from` node that sends it, and its `fields` with their `kind` and limits) |
