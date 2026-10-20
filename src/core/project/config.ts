@@ -330,6 +330,20 @@ export function parseWritten(field: SchemaField, value: string): ConfigValue | u
 }
 
 /** Internal: a list or set of ids as written, or undefined for anything fancier. */
+/** An integer literal, decimal or hex. */
+const integerPattern = /^(?:-?\d+|0[xX][0-9a-fA-F]+)$/;
+
+/** Internal: one element of a list of ids as written, a number kept as it is written. */
+function itemOf(field: SchemaField, value: string): string | undefined {
+	if (field.itemType === 'integer') return integerPattern.test(value) ? value : undefined;
+	return idOf(field, value);
+}
+
+/** One element of a list of ids as Dart: a number as it is, a name as its constant or a string. */
+export function dartItem(field: SchemaField, item: string): string {
+	return field.itemType === 'integer' ? item : dartId(field, item);
+}
+
 export function readIds(
 	text: Text,
 	field: SchemaField,
@@ -343,7 +357,7 @@ export function readIds(
 	const close = closingBracket(text.code, literal.open);
 	const found: string[] = [];
 	for (const item of elements(text.code, literal.open, close)) {
-		const id = idOf(field, written(text, item.start, item.end));
+		const id = itemOf(field, written(text, item.start, item.end));
 		if (id === undefined) return undefined;
 		found.push(id);
 	}
@@ -499,10 +513,14 @@ export function parseValue(field: SchemaField, key: string, value: unknown): Con
 		}
 		case 'ids':
 			if (typed.startsWith('[')) return checkValue(field, key, json(key, typed));
-			return typed
-				.split(',')
-				.map((id) => id.trim())
-				.filter(Boolean);
+			return checkItems(
+				field,
+				key,
+				typed
+					.split(',')
+					.map((id) => id.trim())
+					.filter(Boolean),
+			);
 		case 'section':
 			if (truthy.has(typed)) return true;
 			if (typed.startsWith('{')) return checkValue(field, key, json(key, typed));
@@ -513,11 +531,25 @@ export function parseValue(field: SchemaField, key: string, value: unknown): Con
 			);
 		case 'list':
 			return checkValue(field, key, json(key, typed));
+		case 'object':
+		case 'array':
+		case 'map':
 		case 'code':
 			throw new CliError(`${key} can only be written as code.`, {
 				hint: "Write it into lib/main.dart, in your car's app.",
 			});
 	}
+}
+
+/** Internal: the elements of a list of ids, checked: names, or whole numbers when it holds them. */
+function checkItems(field: SchemaField, key: string, items: unknown[]): string[] {
+	for (const item of items) {
+		if (typeof item !== 'string' || !item) throw badValue(key, String(item), 'Give names.');
+		if (field.itemType === 'integer' && !integerPattern.test(item)) {
+			throw badValue(key, item, 'Give whole numbers, like 6353 or 0x18d1.');
+		}
+	}
+	return items as string[];
 }
 
 function json(key: string, value: string): unknown {
@@ -560,8 +592,12 @@ function checkValue(field: SchemaField, key: string, value: unknown): ConfigValu
 			return { width: size.width as number, height: size.height as number };
 		}
 		case 'ids':
-			if (!Array.isArray(value) || !value.every((id) => typeof id === 'string' && id)) throw fail();
-			return value as string[];
+			if (!Array.isArray(value)) throw fail();
+			return checkItems(
+				field,
+				key,
+				value.map((id) => (typeof id === 'number' ? String(id) : id)),
+			);
 		case 'section':
 		case 'list':
 			if (value === true && field.type === 'section') return true;
@@ -693,7 +729,7 @@ export function dartValue(
 		case 'ids': {
 			const list = value as string[];
 			if (list.some((id) => Object.values(field.constants ?? {}).includes(id))) need(field.imports);
-			const items = list.map((id) => dartId(field, id)).join(', ');
+			const items = list.map((id) => dartItem(field, id)).join(', ');
 			return asConst(field.set ? `{${items}}` : `[${items}]`, inConst);
 		}
 		case 'list': {

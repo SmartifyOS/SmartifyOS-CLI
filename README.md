@@ -130,7 +130,14 @@ An extension's own settings, the arguments its class takes where `lib/main.dart`
 smartify-os extension settings voice_assistant                      # every setting, with its default
 smartify-os extension settings voice_assistant wakeWord "Hey Miata"
 smartify-os extension settings voice_assistant --unset duckLevel
+smartify-os extension settings voice_assistant recognizer SpeechModels.whisperBase
+smartify-os extension settings voice_assistant --set 'aiServer={"url":"http://192.168.1.20:11434/v1","model":"qwen3:8b"}'
+smartify-os extension settings voice_assistant aiServer.model llama3
+smartify-os extension settings android_auto --set 'wirelessNetwork={"$making":"existing","passphrase":"secret"}'
+smartify-os extension settings voice_assistant --describe aiServer   # how a setting like that can be made
 ```
+
+A list or map setting is changed an item at a time, each named in brackets: `--set 'voices[de]=SpeechModels.piperThorsten'`, `--unset 'voices[de]'`. A setting that is another class of the extension's has settings of its own, named with a dot. It is made with one of the ready-made ones its package has, or with one of its constructors (`$making` names a named one) and what that has to be given.
 
 Your own windows, quick settings tiles and home screen widgets each start as a file the CLI makes for you, already handed to SmartifyOS in `lib/main.dart`. You only fill in what it shows or does:
 
@@ -289,7 +296,7 @@ While `run` runs the car's app, `call` reaches SmartifyOS inside it, with `param
 
 | Call        | What it does                                                                     |
 | ----------- | -------------------------------------------------------------------------------- |
-| `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, the `about` page, every page of Settings a page of its own can go in (`settingsPages`), and which bigger configs `configure` can change while it runs (`live`) |
+| `describe`  | What the app has: its `layouts`, `themes` and ways to draw the car, which of them it starts with and which is on screen, the `driverSide`, what is in the `bar`, the `about` page, every page of Settings a page of its own can go in (`settingsPages`), every extension by its class with what it added while it was set up (`extensions`, each kind as `{id, title}`), and which bigger configs `configure` can change while it runs (`live`) |
 | `configure` | Changes what the car starts with, any of `layout`, `theme`, `driverSide`, `bar` (`infoDisplay`, `dock`, `infoDisplayAndDock`), `carLook` (`model3D`, `drawing2D`, `image`), `deviceName`, `model` and `extra` (an object), and the configs `live` names, as JSON: `model3D` (any of `scale`, `lookAtHeight`, `offset` and `rotation` as `{x, y, z}`, and `render` with `exposure`, `environmentIntensity` and `vignette`) and `infoDisplay` (`values`, `views` and `hiddenValues`, each whole). An empty string goes back to SmartifyOS's own. The driver's own pick of the same thing is forgotten, and the reply is the same as `describe`. It does not change `lib/main.dart`, `appearance` and `about` do that |
 | `screenshot` | What is on screen, as a `png` in base64 with its `width` and `height` |
 | `show`      | Puts something on screen the way the driver finds it: `kind` (`window`, `tile`, `widget` or `settings`) with its `id`. A window opens, the quick settings come down, a card comes back, a settings page opens |

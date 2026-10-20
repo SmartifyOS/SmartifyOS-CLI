@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { codeOnly, type ExtensionEntry, isSwitchedOn, switchOff, switchOn } from './main-dart.ts';
+import {
+	codeOnly,
+	type ExtensionEntry,
+	isSwitchedOn,
+	removeArgument,
+	setArgument,
+	switchOff,
+	switchOn,
+} from './main-dart.ts';
 
 const dashcam: ExtensionEntry = {
 	packageName: 'smartify_os_dashcam',
@@ -143,5 +151,55 @@ describe('switchOff', () => {
 	test('gives up when the extension is used somewhere else too', () => {
 		const source = `${switchOn(androidAuto, dashcam)}\nfinal other = DashcamExtension.id;\n`;
 		expect(switchOff(source, dashcam)).toBeUndefined();
+	});
+});
+
+describe('setArgument with an example over several lines', () => {
+	test('takes the whole commented out example', () => {
+		const source = `void main() {
+  VoiceAssistantExtension(
+    wakeWord: 'Hey Miata',
+
+    // aiServer: const VoiceAiServer(
+    //   url: 'http://example',
+    //   model: 'qwen3:8b',
+    // ),
+  );
+}
+`;
+		const edited = setArgument(
+			source,
+			/\bVoiceAssistantExtension\s*\(/,
+			'aiServer',
+			"VoiceAiServer(url: 'http://car', model: 'llama')",
+		);
+		expect(edited).toBe(`void main() {
+  VoiceAssistantExtension(
+    wakeWord: 'Hey Miata',
+
+    aiServer: VoiceAiServer(url: 'http://car', model: 'llama'),
+  );
+}
+`);
+	});
+});
+
+describe('adding and taking out an argument', () => {
+	test('leaves a commented out example at the end where it is', () => {
+		const source = `void main() {
+  VoiceAssistantExtension(
+    wakeWord: 'Hey Miata',
+
+    // An example:
+    // aiServer: VoiceAiServer(url: 'x'),
+  );
+}
+`;
+		const call = /\bVoiceAssistantExtension\s*\(/;
+		const added = setArgument(source, call, 'duckLevel', '0.3') as string;
+		expect(added).toContain(
+			"    wakeWord: 'Hey Miata',\n    duckLevel: 0.3,\n\n    // An example:",
+		);
+		expect(removeArgument(added, call, 'duckLevel')).toBe(source);
 	});
 });

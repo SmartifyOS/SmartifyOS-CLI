@@ -216,9 +216,9 @@ function indentAt(text: string, index: number): string {
 /**
  * Puts a new element at the end of a bracketed list, in the list's own style.
  *
- * A list over several lines gets a line of its own at the indentation of the others, a list
- * on one line gets `, element` at the end, and an empty one gets just the element. An
- * argument list works the same way.
+ * A list over several lines gets a line of its own at the indentation of the others, right
+ * after the last one (comments after that stay after it), a list on one line gets `, element`
+ * at the end, and an empty one gets just the element. An argument list works the same way.
  */
 export function appendElement(source: string, code: string, open: number, element: string): string {
 	const close = closingBracket(code, open);
@@ -233,7 +233,10 @@ export function appendElement(source: string, code: string, open: number, elemen
 
 	if (multiline && code.slice(lineStart(code, close), close).trim() === '') {
 		const indent = indentAt(source, last.start);
-		const at = lineStart(source, close);
+		// Right after the last element's line, so comments after it (an example left commented
+		// out at the end, say) stay where they are, and stay about what they were about.
+		const lineEnd = source.indexOf('\n', last.end);
+		const at = lineEnd === -1 || lineEnd >= close ? lineStart(source, close) : lineEnd + 1;
 		const comma = hasTrailingComma ? '' : ',';
 		const withComma = `${source.slice(0, last.end)}${comma}${source.slice(last.end, at)}`;
 		return `${withComma}${indent}${element},\n${source.slice(at)}`;
@@ -337,8 +340,26 @@ function uncomment(
 	if (before && !before.endsWith(',')) return undefined;
 	// Directly inside the call, not inside one nested in it that has an argument of that name.
 	if (depthAt(code, open + 1, start) !== 0) return undefined;
-	const end = start + line[0].length;
+	// An example over several lines (`// aiServer: VoiceAiServer(` down to `// ),`) goes whole.
+	let end = start + line[0].length;
+	let unclosed = bracketBalance(line[0].slice(line[0].indexOf('//') + 2));
+	while (unclosed > 0) {
+		const next = /^\n([ \t]*\/\/.*)$/m.exec(source.slice(end, close));
+		if (!next || next.index !== 0) return undefined;
+		unclosed += bracketBalance((next[1] ?? '').replace(/^[ \t]*\/\//, ''));
+		end += next[0].length;
+	}
 	return `${source.slice(0, start)}${line[1]}${name}: ${value},${source.slice(end)}`;
+}
+
+/** Internal: how many more brackets a line of code opens than it closes, strings left out. */
+function bracketBalance(line: string): number {
+	let balance = 0;
+	for (const char of codeOnly(line)) {
+		if (char === '(' || char === '[' || char === '{') balance++;
+		else if (char === ')' || char === ']' || char === '}') balance--;
+	}
+	return balance;
 }
 
 /**

@@ -19,6 +19,11 @@ export type FieldType =
 	| 'ids'
 	| 'list'
 	| 'section'
+	/** Another class, with settings of its own: an extension's, see `extension/settings.ts`. */
+	| 'object'
+	/** A list or set of `item`s, and a map of them by a string: an extension's. */
+	| 'array'
+	| 'map'
 	| 'code';
 
 /** One setting the command knows. */
@@ -42,6 +47,10 @@ export interface Field {
 	constants?: Record<string, string>;
 	/** ids: written as a set, `{...}`, rather than a list. */
 	set?: boolean;
+	/** ids: whole numbers rather than names, each kept as it is written (`0x18d1`). */
+	itemType?: 'integer';
+	/** array and map: what each item is. */
+	item?: Field;
 	/** section and list: the class it is, or each element is. */
 	className?: string;
 	/** section and list: what is inside, by name. */
