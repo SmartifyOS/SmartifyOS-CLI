@@ -194,11 +194,11 @@ export interface SerialPort {
 }
 
 /**
- * The USB to serial chips ESP32 boards are programmed through, by USB vendor: Espressif's
- * own USB on the S3 and C3, Silicon Labs' CP210x, WCH's CH340 and CH9102, FTDI. A CANable is
- * none of these, so it is never taken for a board.
+ * The USB to serial chips boards are programmed through, by USB vendor: Espressif's own USB
+ * on the S3 and C3, Silicon Labs' CP210x, WCH's CH340 and CH9102 (most Arduino clones too),
+ * FTDI, and Arduino's own. A CANable is none of these, so it is never taken for a board.
  */
-const boardVendors = ['303A', '10C4', '1A86', '0403'];
+const boardVendors = ['303A', '10C4', '1A86', '0403', '2341', '2A03'];
 
 /**
  * The serial ports on USB (not the Bluetooth or debug ones a Mac always has), and which of

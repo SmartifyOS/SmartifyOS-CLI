@@ -5,7 +5,7 @@ import { CliError } from '../../utils/errors.ts';
 import { lastLines, run } from '../process.ts';
 import { sha256OfFile } from '../self-update/release.ts';
 import { cppName, type FirmwareSource, headerPath, readNodes } from './network.ts';
-import { chipOfBoard, type DeviceProject, syncIni, versionMacro } from './project.ts';
+import { chipOfBoard, type DeviceProject, isUsbDevice, syncIni, versionMacro } from './project.ts';
 import { platformioDir } from './tools.ts';
 
 /**
@@ -20,7 +20,10 @@ import { platformioDir } from './tools.ts';
 
 /** A finished build of a device's firmware. */
 export interface BuiltFirmware {
-	/** The app image, `.pio/build/<env>/firmware.bin`, not one merged with the bootloader. */
+	/**
+	 * The app image, `.pio/build/<env>/firmware.bin`, not one merged with the bootloader, or
+	 * an Arduino's `firmware.hex`.
+	 */
 	bin: string;
 	size: number;
 	sha256: string;
@@ -39,12 +42,13 @@ export function buildEnv(version: string): Record<string, string> {
 }
 
 /**
- * Checks that the car's header is there and has this device in it, which nothing builds
- * without.
+ * Checks that the car's header is there and has this device in it, which no device on the
+ * CAN bus builds without. A board on USB needs none.
  *
  * @throws {CliError} saying what to do about it.
  */
 export async function checkHeader(device: DeviceProject, appDir: string): Promise<void> {
+	if (isUsbDevice(device)) return;
 	const nodes = await readNodes(appDir);
 	if (!nodes) {
 		throw new CliError(`There is no ${headerPath} in your car's app yet.`, {
@@ -64,6 +68,8 @@ export async function checkHeader(device: DeviceProject, appDir: string): Promis
  * is hashed, so a newer library counts as a change too.
  */
 export async function syncDevice(device: DeviceProject, firmware: FirmwareSource): Promise<void> {
+	// A board on USB has no SmartifyOS library, and its platform is its owner's.
+	if (isUsbDevice(device)) return;
 	const path = join(device.dir, 'platformio.ini');
 	const text = await Bun.file(path).text();
 	const synced = syncIni(text, firmware);
@@ -80,7 +86,8 @@ export async function buildDevice(device: DeviceProject, version: string): Promi
 	const env = requireEnv(device);
 	const ini = await Bun.file(join(device.dir, 'platformio.ini')).text();
 	const partitions = /^\s*board_build\.partitions\s*=\s*(\S+)/m.exec(ini)?.[1];
-	if (partitions && /huge_app|no_ota/i.test(partitions)) {
+	const overBus = !isUsbDevice(device);
+	if (overBus && partitions && /huge_app|no_ota/i.test(partitions)) {
 		throw noRoomForUpdates(device, `platformio.ini picks the partition table ${partitions}`);
 	}
 
@@ -95,8 +102,11 @@ export async function buildDevice(device: DeviceProject, version: string): Promi
 	}
 
 	const folder = join(device.dir, '.pio', 'build', env);
-	const bin = join(folder, 'firmware.bin');
-	if (!existsSync(bin)) {
+	// An Arduino's firmware is a .hex.
+	const bin = [join(folder, 'firmware.bin'), join(folder, 'firmware.hex')].find((path) =>
+		existsSync(path),
+	);
+	if (!bin) {
 		throw new CliError(
 			`PlatformIO built ${device.settings.device}, but there is no firmware.bin.`,
 			{
@@ -104,7 +114,7 @@ export async function buildDevice(device: DeviceProject, version: string): Promi
 			},
 		);
 	}
-	await checkPartitions(device, join(folder, 'partitions.bin'));
+	if (overBus) await checkPartitions(device, join(folder, 'partitions.bin'));
 
 	return {
 		bin,
@@ -145,11 +155,59 @@ export async function flashDevice(
 	if (result.code !== 0) {
 		throw new CliError(`${device.settings.device} could not be put on the board at ${port}.`, {
 			hint: [
-				'Check the USB cable carries data, not only power, and that nothing else (a serial monitor) has the port open. Some boards need their BOOT button held down while it starts.',
+				"Check the USB cable carries data, not only power, and that nothing else (a serial monitor, or your car's app running on this computer) has the port open. Some boards need their BOOT button held down while it starts.",
 				lastLines(`${result.stdout}\n${result.stderr}`, 8),
 			].join('\n\n'),
 		});
 	}
+}
+
+/** A file esptool writes onto a board, and where in its flash it goes. */
+export interface FlashImage {
+	offset: number;
+	path: string;
+}
+
+/**
+ * Every file esptool writes onto an ESP32 on USB, in order, the app last: the bootloader,
+ * the partition table and `boot_app0` from where PlatformIO says (`project metadata`), so the
+ * car writes the board exactly the way `device flash` does.
+ *
+ * @throws {CliError} when PlatformIO does not say.
+ */
+export async function flashImages(
+	device: DeviceProject,
+	built: BuiltFirmware,
+): Promise<FlashImage[]> {
+	const env = requireEnv(device);
+	const result = await run(
+		'pio',
+		['project', 'metadata', '--project-dir', device.dir, '--environment', env, '--json-output'],
+		{ cwd: device.dir, env: buildEnv(built.version) },
+	);
+	const extra = (() => {
+		try {
+			const parsed = JSON.parse(result.stdout) as Record<string, { extra?: unknown }>;
+			return parsed[env]?.extra as
+				| { flash_images?: { offset?: string; path?: string }[]; application_offset?: string }
+				| undefined;
+		} catch {
+			return undefined;
+		}
+	})();
+	const appOffset = Number(extra?.application_offset);
+	if (result.code !== 0 || !extra || !Number.isFinite(appOffset)) {
+		throw new CliError(
+			`PlatformIO did not say where ${device.settings.device} goes on its board.`,
+			{
+				hint: lastLines(`${result.stdout}\n${result.stderr}`, 8),
+			},
+		);
+	}
+	const images = (extra.flash_images ?? [])
+		.map((image) => ({ offset: Number(image.offset), path: image.path ?? '' }))
+		.filter((image) => Number.isFinite(image.offset) && image.path && existsSync(image.path));
+	return [...images, { offset: appOffset, path: built.bin }];
 }
 
 /** Internal: the environment a device builds. */

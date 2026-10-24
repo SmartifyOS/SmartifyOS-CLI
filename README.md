@@ -186,16 +186,20 @@ Building on this computer asks what the car runs on, or takes `--arch arm64` (a 
 
 Whatever your car needs installed on Linux (a driver, a program an extension runs, a library to build against) is installed for you, worked out from SmartifyOS, every extension and your own app. Extensions list it in their `pubspec.yaml`, see "Linux packages" in `EXTENSIONS.md`. It all goes in as one package called `smartify-os-run` (and `smartify-os-build` on a car that builds itself), so whatever an extension stops needing is taken out again, and nothing you installed yourself is ever touched. Something that would take part of the car's system out to make room is left out, with a warning naming the extension that asked for it.
 
-## Devices on the CAN bus
+## Devices
 
 The ESP32 boards around your car, on its CAN bus, run small Arduino programs. `DEVICES.md` in the [SmartifyOS repository](https://github.com/Mauznemo/smartify_os_flutter_test) is the full guide. Run these in your car's app folder, or in a device's folder.
 
 ```bash
 smartify-os device create              # the program of one device, in devices/<name>/
+smartify-os device create --usb        # the same for a board on a USB cable
 smartify-os device flash               # build it and put it on its board, over USB
-smartify-os device export              # new firmware for your devices on a USB stick
+smartify-os device export              # new firmware for your devices on a USB stick, USB boards too
 smartify-os device list                # the devices with a program, and their versions
+smartify-os device edit dashboard --baud-rate 9600   # change a board on USB
 ```
+
+A car with only one or two boards can leave the CAN bus out: a board on a USB cable (any ESP32, an Arduino Uno or Nano) talks to the car over serial. `device create --usb` puts it into your car's app as a `SerialDevice` in `lib/serial.dart` and its `SerialConfig`, and makes a plain Arduino sketch for it, with no library, that says which device it is when the car asks (`smartify-os:<name>`), so the car finds it on whichever port it is plugged into. `device export` puts its firmware on a stick too (every file esptool or avrdude writes, and a `.conf` with `CONNECTION=usb`), and the car writes it onto the board over its USB cable once the driver taps Update on the notification, with the esptool or avrdude the installer puts on the car.
 
 The devices and their messages are defined in your car's app, and `smartify-os run` writes them out as `firmware/smartify_os_network.h` for the devices' programs. Building is done by [PlatformIO](https://platformio.org/), which the CLI installs by itself into `~/.smartify-os/tools` the first time, with a Python of its own, so there is nothing to install. The first build also downloads the ESP32 tools, which takes a few minutes. Every device is built against the SmartifyOS-ESP32 library release your car's SmartifyOS names, and gets the board's default partition table, which has room for updates over the bus.
 
@@ -304,6 +308,10 @@ While `run` runs the car's app, `call` reaches SmartifyOS inside it, with `param
 | `canSend` | Takes a message as if its device had sent it: `message` by name and `values` as an object by field name, choices by their names |
 | `canDevice` | Makes the device with `node` say it is there, once a second, or stop with `there` set to `false` |
 | `canTraffic` | What the app sent on the bus after number `after`, each of its `frames` with its `seq`, `message` and `values`, and the number the `next` one gets, which is lower than `after` once the app started again |
+| `serialDescribe` | The car's boards on USB: its `devices` (`name`, `title`, `baudRate`, the `state` it is in (`searching`, `connected`, `failed`), the `port` of a real board it is on, a `problem`, whether it is `pretending` for you, the `values` the app listens for by name, whether it listens to every line (`lines`), and the `last` value of each name) |
+| `serialSend` | Takes a `line` as if the board of the `device` (its name) printed it |
+| `serialDevice` | Makes the `device` count as plugged in, connected to you rather than a board, or stop with `there` set to `false`. A device on a real board stays on it |
+| `serialTraffic` | What the app sent to its boards after number `after`, a `line` each with its `seq` and `device`, and the number the `next` one gets |
 
 When stdin ends while a question is open, the command fails and puts the question in `error.details.prompt`, so a program that answered nothing learns what it has to pass as a flag. `--yes` skips every question that has a sensible answer already.
 

@@ -1,7 +1,7 @@
 import { buildEnv, flashDevice } from '../../core/device/build.ts';
 import { readFirmwareSource } from '../../core/device/network.ts';
 import { listPorts } from '../../core/device/platformio.ts';
-import type { DeviceProject } from '../../core/device/project.ts';
+import { type DeviceProject, iniValue, isUsbDevice } from '../../core/device/project.ts';
 import { requireCar } from '../../core/project/find.ts';
 import { runAttached } from '../../ui/attached.ts';
 import { isJsonMode } from '../../ui/json.ts';
@@ -20,14 +20,15 @@ const monitorBaud = 115200;
 /**
  * Builds a device's firmware and puts it on its board over USB, which is how a new board gets
  * its first firmware: it only has its USB bootloader, and only firmware using the library can
- * be updated over the bus.
+ * be updated over the bus. A board on a USB cable (`connection: 'usb'`) only ever gets it
+ * this way.
  */
 export const deviceFlashCommand: Command = {
 	name: 'flash',
 	aliases: ['upload'],
 	summary: 'Put a device on its board over USB',
 	description:
-		"Builds the program of a device on your car's CAN bus and puts it on its board, plugged into this computer with a USB cable. A new board has to get its first program this way, after that it can be updated in the car too. Run it in the device's folder, or name the device.",
+		"Builds the program of a device and puts it on its board, plugged into this computer with a USB cable. A new board on the CAN bus has to get its first program this way, after that it can be updated in the car too; a board on USB always gets it this way. Quit your car's app on this computer first if it uses the board. Run it in the device's folder, or name the device.",
 	usage: '[device]',
 	examples: [
 		`${binaryName} device flash`,
@@ -58,17 +59,20 @@ export const deviceFlashCommand: Command = {
 		await ensurePlatformio();
 		const { built, raised } = await buildAtVersion(device, app.dir, firmware, flags);
 		const port = await pickPort(flags);
+		const usb = isUsbDevice(device);
+		const what = usb ? name : `${name} ${built.version}`;
 		await step(
-			`Putting ${name} ${built.version} on the board at ${theme.code(port)}`,
+			`Putting ${what} on the board at ${theme.code(port)}`,
 			() => flashDevice(device, built.version, port),
-			() => `Put ${name} ${built.version} on the board at ${theme.code(port)}`,
+			() => `Put ${what} on the board at ${theme.code(port)}`,
 		);
 
 		if (flags.monitor === true) {
-			log.info(`What it prints, at ${monitorBaud} baud. Press Ctrl+C to stop.`);
+			const baud = usb ? await sketchBaud(device) : monitorBaud;
+			log.info(`What it prints, at ${baud} baud. Press Ctrl+C to stop.`);
 			await runAttached(
 				'pio',
-				['device', 'monitor', '--port', port, '--baud', String(monitorBaud)],
+				['device', 'monitor', '--port', port, '--baud', String(baud)],
 				device.dir,
 				{ stopsWithCtrlC: true, env: buildEnv(built.version) },
 			);
@@ -107,8 +111,14 @@ async function pickDevice(appDir: string, given: string | undefined): Promise<De
 	return all.find((device) => device.dir === choice) ?? (all[0] as DeviceProject);
 }
 
+/** Internal: the speed a board on USB talks at, the monitor's in its platformio.ini. */
+async function sketchBaud(device: DeviceProject): Promise<number> {
+	const ini = await Bun.file(`${device.dir}/platformio.ini`).text();
+	return Number(iniValue(ini, 'monitor_speed')) || monitorBaud;
+}
+
 /**
- * Internal: the port the board is on, from the flag, or the one ESP32 plugged in, or asked
+ * Internal: the port the board is on, from the flag, or the one board plugged in, or asked
  * when there are several.
  */
 async function pickPort(flags: Flags): Promise<string> {
@@ -120,7 +130,7 @@ async function pickPort(flags: Flags): Promise<string> {
 			found.boards.length === 1
 				? `Found the board at ${theme.code(found.boards[0]?.port ?? '')}`
 				: found.boards.length === 0
-					? 'Found no ESP32 board'
+					? 'Found no board'
 					: `Found ${found.boards.length} boards`,
 	);
 	const board = boards.length === 1 ? boards[0] : undefined;
@@ -136,7 +146,7 @@ async function pickPort(flags: Flags): Promise<string> {
 		message:
 			boards.length > 0
 				? 'There is more than one board plugged in. Which one should it go on?'
-				: 'None of the USB ports looks like an ESP32. Which one is it on?',
+				: 'None of the USB ports looks like a board. Which one is it on?',
 		options: candidates.map((port) => ({
 			value: port.port,
 			label: port.port,

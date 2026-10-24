@@ -23,7 +23,7 @@ src/commands/       one file per command, switched on in commands/index.ts. A gr
 src/ui/             anything that talks to the terminal, including help rendering
 src/core/           process runners, config, paths, the real work
 src/core/linux/     what a car needs installed on Linux, and scripts/, the shell that runs on it
-src/core/device/    the ESP32s on a car's CAN bus: their projects, PlatformIO, the stick
+src/core/device/    the ESP32s on a car's CAN bus and the boards on USB: their projects, PlatformIO, the stick
 src/utils/          small helpers with no opinion about the terminal
 scripts/build.ts    cross compiles every target
 ```
@@ -88,9 +88,11 @@ The official Linux is named in one place, `src/core/linux/distro.ts`: Debian 13,
 
 `smartify-os setup` installs the newest stable Flutter into `~/.smartify-os/tools/flutter` (`src/core/setup/flutter.ts`), cloned at its tag the way `linux.sh flutter` does it on a car. Unlike PlatformIO it is only a fallback: `findFlutter` in `src/core/process.ts` takes a Flutter on PATH first, and `setup` never installs a second one next to it. `doctor` (`src/core/setup/doctor.ts`) fails only on what nothing works without (Flutter, git), everything else is a warning saying what it is for.
 
-## The devices on a car's CAN bus
+## The devices of a car
 
 `smartify-os device` makes, builds and exports the firmware of the ESP32s on a car's bus (`DEVICES.md` in the SmartifyOS repo is the owner's guide). Each is a PlatformIO project in `<app>/devices/<name>/`, built against the header core writes into `<app>/firmware/` while `smartify-os run` runs the app, and against the library and platform under `smartify_os: firmware:` in core's pubspec, which `syncIni` puts back into `platformio.ini` before every build. The version lives in the device's `smartify-os.json` and goes in as `PLATFORMIO_BUILD_FLAGS`, never in the owner's code.
+
+A board on a USB cable (`connection: 'usb'` in its `smartify-os.json`, made with `device create --usb`) is a `SerialDevice` in the car's app instead (`serial-app.ts`): a constant of its own in `lib/serial.dart`, named in `SerialConfig(devices: [...])`, since the owner's code reads from it. Its project is a plain Arduino one (an ESP32 or one of `arduinoBoards`, which have no CAN), with no library, header or version. `device export` puts it on a stick for the car to write over USB (`UsbFirmware` in `stick.ts`: every image and offset from PlatformIO's `project metadata` for an ESP32, the `.hex` for an Arduino), told apart from CAN firmware by `CONNECTION=usb`. Its sketch only has to say which device it is when asked (`smartify-os:<name>`, `SerialIdentity` in core), which is how the car tells boards apart, so a port is never written anywhere. `device edit` changes its title and speed, the speed in the app and the sketch together.
 
 PlatformIO is never looked for on PATH. `src/core/device/platformio.ts` installs it with uv into `~/.smartify-os/tools`, both pinned there, uv with its checksums written into that file: moving either on is a change to it. Every export moves a `devices/` folder already on the stick over into the new one, since `device export` can come first.
 

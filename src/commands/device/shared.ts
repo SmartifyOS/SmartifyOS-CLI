@@ -11,6 +11,7 @@ import {
 	codeHash,
 	type DeviceProject,
 	deviceAround,
+	isUsbDevice,
 	listDevices,
 	raiseVersion,
 	type VersionPart,
@@ -47,6 +48,7 @@ export function deviceData(device: DeviceProject, appDir: string) {
 		folder: pubPath(appDir, device.dir),
 		version: device.settings.version,
 		board: device.board ?? null,
+		connection: isUsbDevice(device) ? 'usb' : 'can',
 	};
 }
 
@@ -116,13 +118,13 @@ export async function buildAtVersion(
 	const version = await pickVersion(device, code, flags);
 	const raised = version !== device.settings.version;
 
-	const first = hasBuiltBefore()
-		? ''
-		: ' (the first build downloads the ESP32 tools, a few minutes)';
+	const first = hasBuiltBefore() ? '' : ' (the first build downloads the tools, a few minutes)';
+	// A board on USB has no version anyone sees.
+	const shown = isUsbDevice(device) ? name : `${name} ${version}`;
 	const built = await step(
-		`Building ${name} ${version}${first}`,
+		`Building ${shown}${first}`,
 		() => buildDevice(device, version),
-		(built) => `Built ${name} ${version}, ${Math.round(built.size / 1024)} KB`,
+		(built) => `Built ${shown}, ${Math.round(built.size / 1024)} KB`,
 	);
 	device.settings = { ...device.settings, version, code };
 	await writeSettings(device.dir, device.settings);
@@ -132,6 +134,7 @@ export async function buildAtVersion(
 /** Internal: the version to build. */
 async function pickVersion(device: DeviceProject, code: string, flags: Flags): Promise<string> {
 	const current = device.settings.version;
+	if (isUsbDevice(device)) return current;
 	const given = flags.raise;
 	if (given !== undefined) {
 		if (!raiseValues.includes(given as (typeof raiseValues)[number])) {

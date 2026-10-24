@@ -1,7 +1,7 @@
-import type { BuiltFirmware } from '../../core/device/build.ts';
+import { type BuiltFirmware, flashImages } from '../../core/device/build.ts';
 import { readFirmwareSource } from '../../core/device/network.ts';
-import type { DeviceProject } from '../../core/device/project.ts';
-import { writeDeviceFirmware } from '../../core/device/stick.ts';
+import { arduinoBoard, type DeviceProject, isUsbDevice } from '../../core/device/project.ts';
+import { type UsbFirmware, writeDeviceFirmware } from '../../core/device/stick.ts';
 import { readExistingExport } from '../../core/export/export.ts';
 import { requireCar } from '../../core/project/find.ts';
 import { intro, log, outro } from '../../ui/output.ts';
@@ -15,14 +15,15 @@ import { buildAtVersion, deviceData, ensurePlatformio, findDevices, raiseFlag } 
 
 /**
  * Builds the firmware of the car's devices onto a USB stick, into the same `smartify-os`
- * folder `export update` uses, alone or next to an update. The driver then updates each
- * device in the car, over the bus.
+ * folder `export update` uses, alone or next to an update. Once the stick is in the car, one
+ * notification offers all of it, and the car writes each device: over the bus for one on the
+ * CAN bus, over its USB cable (with esptool or avrdude) for a board on USB.
  */
 export const deviceExportCommand: Command = {
 	name: 'export',
 	summary: 'Put new firmware for your devices on a USB stick',
 	description:
-		"Builds the program of the devices on your car's CAN bus you pick (all of them, unless you name some) and puts it on a USB stick, next to an update of your car's app if there is one on it. Plug the stick into the car, open Settings, Vehicle, Devices in the car, and update each device there. Run it in your car's app folder.",
+		"Builds the program of the devices you pick (all of them, unless you name some), on the CAN bus or on USB, and puts it on a USB stick, next to an update of your car's app if there is one on it. Plug the stick into the car and tap Update on the notification that comes up. Run it in your car's app folder.",
 	usage: '[device...]',
 	examples: [
 		`${binaryName} device export`,
@@ -51,9 +52,16 @@ export const deviceExportCommand: Command = {
 		}
 
 		await ensurePlatformio();
-		const builds: { device: DeviceProject; built: BuiltFirmware; raised: boolean }[] = [];
+		const builds: {
+			device: DeviceProject;
+			built: BuiltFirmware;
+			raised: boolean;
+			usb?: UsbFirmware;
+		}[] = [];
 		for (const device of devices) {
-			builds.push({ device, ...(await buildAtVersion(device, app.dir, firmware, flags)) });
+			const build = await buildAtVersion(device, app.dir, firmware, flags);
+			const usb = isUsbDevice(device) ? await usbFirmware(device, build.built) : undefined;
+			builds.push({ device, ...build, ...(usb ? { usb } : {}) });
 		}
 
 		const written = await step(
@@ -61,7 +69,11 @@ export const deviceExportCommand: Command = {
 			() =>
 				writeDeviceFirmware(
 					target,
-					builds.map(({ device, built }) => ({ device: device.settings.device, built })),
+					builds.map(({ device, built, usb }) => ({
+						device: device.settings.device,
+						built,
+						...(usb ? { usb } : {}),
+					})),
 				),
 			(written) => `Written to ${theme.code(written.folder)}`,
 		);
@@ -69,8 +81,8 @@ export const deviceExportCommand: Command = {
 		note(
 			[
 				'1. Plug the stick into the car while SmartifyOS runs.',
-				'2. Open Settings, Vehicle, Devices in the car, and pick the device.',
-				'3. Tap Update. It takes about a minute, and the device keeps working meanwhile.',
+				'2. A notification offers the new firmware. Tap Update, or Choose to pick.',
+				'3. It takes about a minute for each. A board on USB has to be plugged in.',
 			].join('\n'),
 			'In the car',
 		);
@@ -109,4 +121,22 @@ async function pickDevices(
 		initialValues: all.map((device) => device.dir),
 	});
 	return all.filter((device) => picked.includes(device.dir));
+}
+
+/** Internal: how the car writes a board on USB, from its board. */
+async function usbFirmware(device: DeviceProject, built: BuiltFirmware): Promise<UsbFirmware> {
+	const arduino = device.board ? arduinoBoard(device.board) : undefined;
+	if (arduino) {
+		return {
+			tool: 'avrdude',
+			mcu: arduino.mcu ?? 'atmega328p',
+			...(arduino.uploadSpeed ? { uploadBaud: arduino.uploadSpeed } : {}),
+		};
+	}
+	return {
+		tool: 'esptool',
+		...(built.chip ? { chip: built.chip } : {}),
+		uploadBaud: 460800,
+		images: await flashImages(device, built),
+	};
 }

@@ -5,10 +5,11 @@ import { CliError } from '../../utils/errors.ts';
 import { type FirmwareSource, headerPath } from './network.ts';
 
 /**
- * A device's project: the PlatformIO project of one ESP32 on a car's CAN bus, in a folder
- * of its own inside the car's app, `devices/<name>/`.
+ * A device's project: the PlatformIO project of one ESP32 on a car's CAN bus, or of one
+ * board on a USB cable (`connection: 'usb'`, an ESP32 or an Arduino), in a folder of its own
+ * inside the car's app, `devices/<name>/`.
  *
- *   platformio.ini      what to build it for, see {@link renderIni}
+ *   platformio.ini      what to build it for, see {@link renderIni} and {@link renderUsbIni}
  *   src/main.cpp        the device's program, the only file its owner touches
  *   smartify-os.json    what the CLI keeps about it, see {@link DeviceSettings}
  *   .gitignore          PlatformIO's build folder
@@ -33,6 +34,12 @@ export interface Board {
 	chip: string;
 	/** Other names it is found by, for `--board`. */
 	aliases: string[];
+	/** The PlatformIO platform, for a board that is not an ESP32, which has no CAN. */
+	platform?: string;
+	/** For an Arduino: its microcontroller, as avrdude names it. */
+	mcu?: string;
+	/** For an Arduino: how fast its bootloader talks, which avrdude needs told. */
+	uploadSpeed?: number;
 }
 
 /**
@@ -56,18 +63,60 @@ export const boards: Board[] = [
 ];
 
 /**
- * The PlatformIO board for what someone typed: one of {@link boards} by any of its names,
- * or else taken as a PlatformIO board name as it is.
+ * The Arduinos a board on a USB cable can be besides an ESP32. They have no CAN, so they are
+ * only ever on USB.
+ */
+export const arduinoBoards: Board[] = [
+	{
+		id: 'uno',
+		label: 'Arduino Uno',
+		chip: 'atmega328p',
+		aliases: ['arduino-uno', 'arduino'],
+		platform: 'atmelavr',
+		mcu: 'atmega328p',
+		uploadSpeed: 115200,
+	},
+	{
+		id: 'nanoatmega328new',
+		label: 'Arduino Nano',
+		chip: 'atmega328p',
+		aliases: ['nano', 'arduino-nano'],
+		platform: 'atmelavr',
+		mcu: 'atmega328p',
+		uploadSpeed: 115200,
+	},
+	{
+		id: 'nanoatmega328',
+		label: 'Arduino Nano, old bootloader',
+		chip: 'atmega328p',
+		aliases: ['nano-old'],
+		platform: 'atmelavr',
+		mcu: 'atmega328p',
+		uploadSpeed: 57600,
+	},
+];
+
+/**
+ * The PlatformIO board for what someone typed: one of {@link boards} or
+ * {@link arduinoBoards} by any of its names, or else taken as a PlatformIO board name as it
+ * is (an ESP32 PlatformIO knows).
  */
 export function boardId(input: string): string {
 	const wanted = input.trim().toLowerCase();
-	const known = boards.find((board) => board.id === wanted || board.aliases.includes(wanted));
+	const known = [...boards, ...arduinoBoards].find(
+		(board) => board.id === wanted || board.aliases.includes(wanted),
+	);
 	return known?.id ?? input.trim();
 }
 
 /** The chip on a board, when it is one of {@link boards}. */
 export function chipOfBoard(id: string): string | undefined {
 	return boards.find((board) => board.id === id)?.chip;
+}
+
+/** The Arduino a board is, when it is one of {@link arduinoBoards}, which have no CAN. */
+export function arduinoBoard(id: string): Board | undefined {
+	return arduinoBoards.find((board) => board.id === id);
 }
 
 /** `Pop-up headlights` becomes `popUpHeadlights`, the way the car's messages are named. */
@@ -87,8 +136,14 @@ export function deviceName(title: string): string {
 
 /** What the CLI keeps about a device, in its {@link settingsName}. */
 export interface DeviceSettings {
-	/** `CanDevice.name`, which the stick names the firmware by. */
+	/** `CanDevice.name` (or `SerialDevice.name`), which the stick names the firmware by. */
 	device: string;
+	/**
+	 * `usb` for a board on a USB cable, a `SerialDevice`, which has no SmartifyOS library, is
+	 * only ever updated over USB and has no version that means anything. Left out for a
+	 * device on the CAN bus.
+	 */
+	connection?: 'usb';
 	/** The firmware's version, `1.0.0`, sent in the device's heartbeat. */
 	version: string;
 	/**
@@ -131,7 +186,10 @@ export function parseSettings(text: string): DeviceSettings | undefined {
 		if (typeof device !== 'string' || !device) return undefined;
 		if (typeof version !== 'string' || !isFirmwareVersion(version)) return undefined;
 		if (code !== null && typeof code !== 'string') return undefined;
-		return { device, version, code };
+		if (raw.connection !== undefined && raw.connection !== 'usb') return undefined;
+		return raw.connection === 'usb'
+			? { device, connection: 'usb', version, code }
+			: { device, version, code };
 	} catch {
 		return undefined;
 	}
@@ -139,6 +197,11 @@ export function parseSettings(text: string): DeviceSettings | undefined {
 
 export async function writeSettings(dir: string, settings: DeviceSettings): Promise<void> {
 	await Bun.write(join(dir, settingsName), `${JSON.stringify(settings, null, '\t')}\n`);
+}
+
+/** Whether a device is a board on a USB cable rather than on the CAN bus. */
+export function isUsbDevice(device: DeviceProject): boolean {
+	return device.settings.connection === 'usb';
 }
 
 /** Every device project of a car, by name. */
@@ -261,6 +324,116 @@ void loop() {
 `;
 }
 
+/** A new board on a USB cable. */
+export interface NewUsbDevice extends NewDevice {
+	/** `SerialDevice.name`, which is what the sketch says it is. */
+	device: string;
+	/** `Serial.begin`'s, the same as `SerialDevice.baudRate`. */
+	baudRate: number;
+}
+
+/**
+ * platformio.ini for a board on a USB cable: a plain Arduino project, with no SmartifyOS
+ * library, since a sketch needs none to talk over serial. [platform] is the car's ESP32
+ * platform for an ESP32.
+ */
+export function renderUsbIni(device: NewUsbDevice, platform: string): string {
+	return [
+		`; ${device.title}, a board on a USB cable to your car's computer. smartify-os builds it:`,
+		';   smartify-os device flash    puts it on the board, over USB',
+		';',
+		'; A plain Arduino project. Add libraries of your own under lib_deps.',
+		'',
+		`[env:${device.name}]`,
+		`platform = ${arduinoBoard(device.board)?.platform ?? platform}`,
+		'framework = arduino',
+		`board = ${device.board}`,
+		'; The same as Serial.begin in src/main.cpp.',
+		`monitor_speed = ${device.baudRate}`,
+		'',
+	].join('\n');
+}
+
+/**
+ * src/main.cpp for a new board on a USB cable: it says which device it is, the way
+ * SmartifyOS asks (`SerialIdentity` in core), reads the lines the app sends, and shows how to
+ * print a value.
+ */
+export function renderSketch(device: Pick<NewUsbDevice, 'device' | 'title' | 'baudRate'>): string {
+	return `// ${device.title}, a board on a USB cable to your car's computer.
+//
+// A normal Arduino program. Build it and put it on the board with
+// \`smartify-os device flash\`, run in this folder. Quit your car's app on this
+// computer first: while it runs, it has the board's port open.
+//
+// What it prints arrives in your car's app. A number goes as name:value, like
+// "oil:92", which the app reads with SmartifyOsSerial.values(${device.device}, 'oil')
+// (the Arduino IDE's Serial Plotter draws the same lines). Any other line
+// arrives as it is, in SmartifyOsSerial.lines(${device.device}).
+
+#include <Arduino.h>
+
+// Who this board is. It says so once it has started and whenever it is asked,
+// so your car tells it apart from any other board plugged in. Keep it as it is.
+const char* const smartifyOsName = "smartify-os:${device.device}";
+
+void setup() {
+  // The same speed as baudRate in your car's app.
+  Serial.begin(${device.baudRate});
+
+  // Your own setup goes here: pins, sensors.
+
+  Serial.println(smartifyOsName);
+}
+
+void loop() {
+  // A line your car's app sent, with SmartifyOsSerial.sendLine.
+  if (Serial.available()) {
+    String line = Serial.readStringUntil('\\n');
+    line.trim();
+    if (line == "smartify-os?") Serial.println(smartifyOsName);
+
+    // For example, after SmartifyOsSerial.sendLine(${device.device}, 'lights on'):
+    // if (line == "lights on") digitalWrite(LED_BUILTIN, HIGH);
+  }
+
+  // Your own code goes here, and prints what it has to say. Keep loop() quick:
+  // wait with millis(), not delay(). For example, a reading twice a second:
+  //
+  // static unsigned long last = 0;
+  // if (millis() - last >= 500) {
+  //   last = millis();
+  //   Serial.print("oil:");
+  //   Serial.println(analogRead(A0) / 10.0);
+  // }
+}
+`;
+}
+
+/**
+ * Sets the speed a board on a USB cable talks at in its project: \`Serial.begin\` in
+ * src/main.cpp and the monitor's in platformio.ini. Gives back whether the sketch has
+ * exactly one \`Serial.begin\` to change, which it otherwise leaves to its owner.
+ */
+export async function setSketchBaudRate(dir: string, baudRate: number): Promise<boolean> {
+	const ini = join(dir, 'platformio.ini');
+	if (existsSync(ini)) {
+		const text = await Bun.file(ini).text();
+		const changed = text.replace(/^(\s*monitor_speed\s*=\s*)\d+/m, `$1${baudRate}`);
+		if (changed !== text) await Bun.write(ini, changed);
+	}
+	const main = join(dir, 'src', 'main.cpp');
+	if (!existsSync(main)) return false;
+	const text = await Bun.file(main).text();
+	const begins = [...text.matchAll(/\bSerial\.begin\s*\(\s*\d+\s*\)/g)];
+	if (begins.length !== 1) return false;
+	await Bun.write(
+		main,
+		text.replace(/\bSerial\.begin\s*\(\s*\d+\s*\)/, `Serial.begin(${baudRate})`),
+	);
+	return true;
+}
+
 /** The version a new device starts at. */
 export const firstVersion = '1.0.0';
 
@@ -288,6 +461,38 @@ export async function createDevice(
 	];
 	for (const [path, text] of files) await Bun.write(join(dir, path), text);
 	await writeSettings(dir, { device: device.device, version: firstVersion, code: null });
+	return { dir, files: [...files.map(([path]) => path), settingsName] };
+}
+
+/**
+ * Writes a new board on a USB cable's project into `devices/<name>/`.
+ *
+ * @throws {CliError} when that folder is there already.
+ */
+export async function createUsbDevice(
+	appDir: string,
+	device: NewUsbDevice,
+	firmware: FirmwareSource,
+): Promise<{ dir: string; files: string[] }> {
+	const dir = join(appDir, devicesFolder, device.name);
+	if (existsSync(dir)) {
+		throw new CliError(`There is a folder ${devicesFolder}/${device.name} already.`, {
+			hint: 'That board has a project already. Put it on the board with smartify-os device flash.',
+		});
+	}
+	await mkdir(join(dir, 'src'), { recursive: true });
+	const files: [string, string][] = [
+		['platformio.ini', renderUsbIni(device, firmware.platform)],
+		[join('src', 'main.cpp'), renderSketch(device)],
+		['.gitignore', '# What PlatformIO builds.\n.pio/\n'],
+	];
+	for (const [path, text] of files) await Bun.write(join(dir, path), text);
+	await writeSettings(dir, {
+		device: device.device,
+		connection: 'usb',
+		version: firstVersion,
+		code: null,
+	});
 	return { dir, files: [...files.map(([path]) => path), settingsName] };
 }
 
@@ -337,7 +542,7 @@ export async function codeHash(device: DeviceProject, appDir: string): Promise<s
 	for (const path of files.map((path) => relative(device.dir, path).split(sep).join('/')).sort()) {
 		await add(path, join(device.dir, path));
 	}
-	await add(headerPath, join(appDir, headerPath));
+	if (!isUsbDevice(device)) await add(headerPath, join(appDir, headerPath));
 	return hasher.digest('hex');
 }
 

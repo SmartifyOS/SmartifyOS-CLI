@@ -503,6 +503,11 @@ const schema: SchemaField[] = [
 		],
 		{ nullable: true },
 	),
+	// The boards themselves are constants the owner's code reads from, so only ever code
+	// (smartify-os device create --usb puts a new one in).
+	section('serial', 'SerialConfig', [core('serial')], 'The boards on a USB cable', [
+		code('devices', 'The boards'),
+	]),
 	section('infoDisplay', 'InfoDisplayConfig', [core('info_display')], 'The info display', [
 		{
 			key: 'values',
@@ -633,6 +638,7 @@ const comments: Record<string, string> = {
 	car: 'The car, wherever a layout shows it.',
 	reverseCamera: 'The reverse camera, any USB camera.',
 	can: 'The CAN bus, and the devices on it.',
+	serial: 'The boards on a USB cable, an Arduino or an ESP32.',
 	infoDisplay: 'What the info display can show, and what a tap on it goes through.',
 	statusBar: 'The icons in the status bar.',
 	notifications: 'How notifications show and sound.',

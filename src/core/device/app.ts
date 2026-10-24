@@ -33,15 +33,15 @@ export function deviceCall(device: DeviceDefinition): string {
 	return `CanDevice(node: ${device.node}, name: ${dartString(device.name)}, title: ${dartString(device.title)})`;
 }
 
-/** Internal: a Dart string literal, in double quotes when that saves escaping one. */
-function dartString(text: string): string {
+/** A Dart string literal, in double quotes when that saves escaping one. */
+export function dartString(text: string): string {
 	const escaped = text.replace(/\\/g, '\\\\').replace(/\$/g, '\\$');
 	if (text.includes("'") && !text.includes('"')) return `"${escaped}"`;
 	return `'${escaped.replace(/'/g, "\\'")}'`;
 }
 
 /** Every Dart file in the app's `lib`. */
-async function dartFiles(appDir: string): Promise<string[]> {
+export async function dartFiles(appDir: string): Promise<string[]> {
 	const found: string[] = [];
 	const walk = async (dir: string) => {
 		const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
@@ -141,12 +141,17 @@ async function findPlace(
 }
 
 /**
- * Puts a device into the one `CanConfig(...)` in a file: at the end of its `devices` list,
- * or a `devices` list of its own when it has none. Undefined when there is no one place.
+ * Puts a device into the one `CanConfig(...)` in a file (or another config with a `devices`
+ * list, by its class): at the end of its `devices` list, or a `devices` list of its own when
+ * it has none. Undefined when there is no one place.
  */
-export function addToConfig(source: string, element: string): string | undefined {
+export function addToConfig(
+	source: string,
+	element: string,
+	className = 'CanConfig',
+): string | undefined {
 	const code = codeOnly(source);
-	const config = onlyMatch(code, /\bCanConfig\s*\(/);
+	const config = onlyMatch(code, new RegExp(`\\b${className}\\s*\\(`));
 	if (!config) return undefined;
 	const open = config.index + config[0].length - 1;
 	const close = closingBracket(code, open);
