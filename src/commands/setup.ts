@@ -1,5 +1,7 @@
+import { findAndroidTools, missingAndroidTools } from '../core/android/tools.ts';
 import { isPlatformioReady, platformioRunsHere } from '../core/device/platformio.ts';
 import { type FlutterSetUp, type FlutterSetUpStep, setUpFlutter } from '../core/setup/flutter.ts';
+import { androidToolsQuestion, setUpAndroidStep } from '../ui/android.ts';
 import { checkComputer, readySummary } from '../ui/doctor.ts';
 import { nextSteps } from '../ui/next-steps.ts';
 import { intro, outro } from '../ui/output.ts';
@@ -16,12 +18,20 @@ import type { Command } from './types.ts';
 export const setupCommand: Command = {
 	name: 'setup',
 	summary: 'Get this computer ready to make a car',
-	description: `Installs Flutter, which SmartifyOS is built with, unless this computer has it already. It goes into ~/.smartify-os/tools, out of your way, and is only used when there is no other Flutter. With --platformio it also sets up PlatformIO, which builds the devices on your car's CAN bus. Then it checks everything else the way ${binaryName} doctor does. Run it once after installing, and again any time.`,
-	examples: [`${binaryName} setup`, `${binaryName} setup --platformio`],
+	description: `Installs Flutter, which SmartifyOS is built with, unless this computer has it already. It goes into ~/.smartify-os/tools, out of your way, and is only used when there is no other Flutter. With --platformio it also sets up PlatformIO, which builds the devices on your car's CAN bus, and with --android what building for an Android tablet needs: the Android SDK and Java, unless Android Studio has them already. Without either it asks. Then it checks everything else the way ${binaryName} doctor does. Run it once after installing, and again any time.`,
+	examples: [
+		`${binaryName} setup`,
+		`${binaryName} setup --platformio`,
+		`${binaryName} setup --android`,
+	],
 	flags: {
 		platformio: {
 			type: 'boolean',
 			describe: "Also set up PlatformIO, for the devices on your car's CAN bus",
+		},
+		android: {
+			type: 'boolean',
+			describe: "Also set up building for Android, for a tablet that is your car's screen",
 		},
 	},
 	async run({ flags }) {
@@ -32,6 +42,12 @@ export const setupCommand: Command = {
 		if (!(await isPlatformioReady()) && (await wantsPlatformio(flags.platformio, flags.yes))) {
 			await ensurePlatformio();
 			platformio = true;
+		}
+
+		let android: string[] | null = null;
+		const androidMissing = missingAndroidTools(await findAndroidTools()).length > 0;
+		if (androidMissing && (await wantsAndroid(flags.android, flags.yes))) {
+			android = (await setUpAndroidStep()).installed;
 		}
 
 		const report = await checkComputer();
@@ -47,6 +63,7 @@ export const setupCommand: Command = {
 				path: flutter.path,
 			},
 			platformio: { installed: platformio },
+			android: { installed: android ?? [] },
 			doctor: report,
 		};
 	},
@@ -89,6 +106,19 @@ async function wantsPlatformio(flag: unknown, yes: unknown): Promise<boolean> {
 	if (yes === true || !isInteractive() || !platformioRunsHere()) return false;
 	return await confirm({
 		message: "Set up PlatformIO too? It builds the devices on your car's CAN bus, if it has any.",
+		initialValue: false,
+	});
+}
+
+/**
+ * Internal: whether to set up building for Android. Only some cars have an Android tablet as
+ * their screen, and it is a big download, so it is asked rather than done.
+ */
+async function wantsAndroid(flag: unknown, yes: unknown): Promise<boolean> {
+	if (flag === true) return true;
+	if (yes === true || !isInteractive()) return false;
+	return await confirm({
+		message: `Set up building for Android too? Only needed when an Android tablet is your car's screen. ${androidToolsQuestion}`,
 		initialValue: false,
 	});
 }

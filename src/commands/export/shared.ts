@@ -1,5 +1,13 @@
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { collectDownloads } from '../../core/downloads/collect.ts';
+import { fetchItem, isCached } from '../../core/downloads/fetch.ts';
+import {
+	chooseDownloads,
+	type DownloadChoice,
+	dependsOnArch,
+	itemPath,
+} from '../../core/downloads/list.ts';
 import {
 	buildBundle,
 	binaryName as bundleBinaryName,
@@ -16,6 +24,7 @@ import {
 	exportFolderName,
 	exportSets,
 	readExistingExport,
+	type StickDownload,
 	writeExport,
 } from '../../core/export/export.ts';
 import { addPlatforms, type FlutterVersion, flutterVersion } from '../../core/flutter.ts';
@@ -28,7 +37,15 @@ import { emit, isJsonMode } from '../../ui/json.ts';
 import { describeSets, renderNeedProblems, setData } from '../../ui/linux.ts';
 import { intro, log, outro } from '../../ui/output.ts';
 import { readCarStep, step } from '../../ui/project.ts';
-import { confirm, isInteractive, note, select, spinner, text } from '../../ui/prompt.ts';
+import {
+	confirm,
+	isInteractive,
+	multiselect,
+	note,
+	select,
+	spinner,
+	text,
+} from '../../ui/prompt.ts';
 import { theme } from '../../ui/theme.ts';
 import { CliError } from '../../utils/errors.ts';
 import { binaryName } from '../flags.ts';
@@ -51,7 +68,13 @@ export const exportFlags: Record<string, FlagSpec> = {
 	},
 	arch: {
 		type: 'string',
-		describe: "The car's architecture when this computer builds: x64, or arm64 (a Raspberry Pi)",
+		describe: "The car's architecture: x64, or arm64 (a Raspberry Pi)",
+	},
+	download: {
+		type: 'string',
+		multiple: true,
+		describe:
+			'Something an extension downloads to put on the car with it, by its name, again for more. none for nothing',
 	},
 };
 
@@ -74,6 +97,8 @@ export interface ExportData {
 	problems: CarNeeds['problems'];
 	/** Libraries the build links against that no package installed. */
 	warnings: string[];
+	/** What the extensions download that went on the stick with it. */
+	downloads: { key: string; title: string; sizeMb: number; path: string }[];
 }
 
 export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportData> {
@@ -106,6 +131,7 @@ export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportD
 		);
 	}
 
+	const choices = await pickDownloads(state, flags, arch);
 	const target = await pickTarget(flags.to);
 	const data = (changed: boolean, extra: Partial<ExportData> = {}): ExportData => ({
 		changed,
@@ -119,6 +145,7 @@ export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportD
 		sets: exportSets({ buildOn, needs }).map(setData),
 		problems: needs.problems,
 		warnings: [],
+		downloads: [],
 		...extra,
 	});
 
@@ -144,6 +171,8 @@ export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportD
 			`${buildOn === 'car' ? 'The car builds' : 'It is built'} with Flutter ${found.version}, the same as this computer`,
 	);
 
+	const downloads = await fetchDownloads(choices);
+
 	let built: (Built & { remove?: () => Promise<void> }) | undefined;
 	let warnings: string[] = [];
 	if (builder && arch) {
@@ -154,7 +183,7 @@ export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportD
 	try {
 		result = await step(
 			`Putting ${kind === 'installer' ? 'the installer' : 'the update'} on it`,
-			() => writeExport({ kind, buildOn, state, needs, binary, flutter, built }, target),
+			() => writeExport({ kind, buildOn, state, needs, binary, flutter, built, downloads }, target),
 			(result) => `Written to ${theme.code(result.folder)}`,
 		);
 	} finally {
@@ -189,7 +218,148 @@ export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportD
 		flutter,
 		sets: result.sets.map(setData),
 		warnings,
+		downloads: choices.map((choice) => ({
+			key: choice.key,
+			title: choice.item.title,
+			sizeMb: choice.item.sizeMb,
+			path: itemPath(choice.list, choice.item),
+		})),
 	});
+}
+
+/**
+ * Internal: what the car's extensions download that goes on the stick with it, from
+ * `--download`, by asking, or what the car needs unless told otherwise (with `--yes`, or when
+ * nobody can be asked).
+ */
+async function pickDownloads(
+	state: CarState,
+	flags: Flags,
+	known: LinuxArch | undefined,
+): Promise<DownloadChoice[]> {
+	const found = await collectDownloads(state);
+	renderNeedProblems(found.problems);
+	if (found.lists.length === 0) return [];
+
+	const given = (Array.isArray(flags.download) ? flags.download : [flags.download])
+		.filter((value): value is string => typeof value === 'string')
+		.flatMap((value) => value.split(','))
+		.map((value) => value.trim())
+		.filter(Boolean);
+	const asking = given.length === 0 && flags.yes !== true && isInteractive();
+
+	let arch = known ?? (flags.arch as LinuxArch | undefined);
+	if (arch !== undefined && !linuxArchs.includes(arch)) {
+		throw new CliError(`--arch is x64 or arm64, not ${String(arch)}.`);
+	}
+	if (!arch && asking && dependsOnArch(found.lists)) {
+		arch = await select<LinuxArch>({
+			message: 'What does the car run on? It decides which downloads suit it.',
+			options: [
+				{ value: 'arm64', label: 'A Raspberry Pi', hint: 'or another ARM board, arm64' },
+				{ value: 'x64', label: 'A PC or mini PC', hint: 'Intel or AMD, x64' },
+			],
+			initialValue: 'x64',
+		});
+	}
+	const choices = chooseDownloads(found.lists, found.settings, arch);
+
+	if (given.length > 0) {
+		if (given.includes('none')) return [];
+		return choices
+			.filter(
+				(choice) => choice.item.required || given.some((name) => matches(choice, name, choices)),
+			)
+			.concat(unknownDownloads(given, choices));
+	}
+	if (!asking) return choices.filter((choice) => choice.picked);
+
+	const optional = choices.filter((choice) => !choice.item.required);
+	const required = choices.filter((choice) => choice.item.required);
+	if (optional.length === 0) return required;
+	const several = found.lists.length > 1;
+	const cached = new Set<string>();
+	for (const choice of optional) {
+		if (await isCached(choice.list, choice.item)) cached.add(choice.key);
+	}
+	const keys = await multiselect<string>({
+		message: `What should go on the car with it? ${several ? 'Your extensions download' : `${found.lists[0]?.requester.title} downloads`} these by itself, but a car often has no internet.`,
+		options: optional.map((choice) => ({
+			value: choice.key,
+			label: several ? `${choice.list.requester.title}: ${choice.item.title}` : choice.item.title,
+			hint: [
+				choice.reason === 'setting' ? 'Your app uses it' : choice.item.about,
+				`${choice.item.sizeMb} MB`,
+				cached.has(choice.key) ? 'downloaded already' : undefined,
+			]
+				.filter(Boolean)
+				.join(', '),
+		})),
+		initialValues: optional.filter((choice) => choice.picked).map((choice) => choice.key),
+		required: false,
+	});
+	return [...required, ...optional.filter((choice) => keys.includes(choice.key))];
+}
+
+/** Internal: whether a name given with --download is this choice: its key, or its id when that is unique. */
+function matches(choice: DownloadChoice, name: string, all: DownloadChoice[]): boolean {
+	if (choice.key === name) return true;
+	return choice.item.id === name && all.filter((other) => other.item.id === name).length === 1;
+}
+
+/** Internal: throws for a name given with --download that is none of them. */
+function unknownDownloads(given: string[], choices: DownloadChoice[]): DownloadChoice[] {
+	const unknown = given.filter((name) => !choices.some((choice) => matches(choice, name, choices)));
+	if (unknown.length > 0) {
+		throw new CliError(`There is nothing called ${unknown.join(' or ')} to download.`, {
+			hint: `These are: ${choices.map((choice) => choice.key).join(', ')}, or none.`,
+		});
+	}
+	return [];
+}
+
+/**
+ * Internal: downloads what goes on the stick, or takes it from what this computer kept, and
+ * says where each is.
+ */
+async function fetchDownloads(choices: DownloadChoice[]): Promise<StickDownload[]> {
+	const downloads: StickDownload[] = [];
+	const total = choices.reduce((sum, choice) => sum + choice.item.sizeMb, 0);
+	for (const choice of choices) {
+		const path = itemPath(choice.list, choice.item);
+		// Two items can share a folder, and only need it once.
+		if (downloads.some((download) => download.path === path)) continue;
+		if (await isCached(choice.list, choice.item)) {
+			downloads.push({ path, from: await fetchItem(choice.list, choice.item) });
+			continue;
+		}
+		const progress = spinner();
+		const what = `Downloading ${choice.item.title}`;
+		progress.start(`${what} (${choice.item.sizeMb} MB)`);
+		let shown = -1;
+		try {
+			const from = await fetchItem(choice.list, choice.item, (received) => {
+				const mb = Math.floor(received / 1_000_000);
+				// A step at a time, so a fast download does not redraw for every packet.
+				if (mb - shown < Math.max(1, Math.round(choice.item.sizeMb / 50))) return;
+				shown = mb;
+				progress.message(
+					`${what} (${Math.min(mb, choice.item.sizeMb)} of ${choice.item.sizeMb} MB)`,
+				);
+			});
+			progress.stop(`Downloaded ${choice.item.title}`);
+			downloads.push({ path, from });
+		} catch (error) {
+			progress.error(`${choice.item.title} did not download`);
+			throw error;
+		}
+	}
+	if (choices.length > 0) {
+		log.info(
+			`${choices.length === 1 ? choices[0]?.item.title : `${choices.length} downloads`} go on the stick (${total} MB). ${theme.dim('The car leaves alone what it has already.')}`,
+		);
+	}
+	return downloads;
 }
 
 /**

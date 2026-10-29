@@ -581,3 +581,59 @@ describe('before SmartifyOS starts', () => {
 		expect(await onDisk()).toEqual({ app: 'c', 'app.old': 'b' });
 	});
 });
+
+describe('downloads', () => {
+	const stick = join(root, 'stick-downloads');
+	const data = join(root, 'data');
+
+	function downloads(args: string[] = [stick]) {
+		const result = Bun.spawnSync(['bash', script, 'downloads', ...args], {
+			env: {
+				...process.env,
+				PATH: `${bin}:${process.env.PATH}`,
+				XDG_DATA_HOME: data,
+				NO_COLOR: '1',
+			},
+		});
+		return { code: result.exitCode, stderr: result.stderr.toString() };
+	}
+
+	beforeEach(async () => {
+		await rm(stick, { recursive: true, force: true });
+		await rm(data, { recursive: true, force: true });
+		await Bun.write(join(stick, 'voice_assistant/models/whisper-base/tokens.txt'), 'new');
+		await Bun.write(join(stick, 'voice_assistant/models/silero-vad/silero_vad.onnx'), 'vad');
+		await Bun.write(
+			join(stick, 'downloads.list'),
+			'voice_assistant/models/whisper-base\nvoice_assistant/models/silero-vad\n',
+		);
+	});
+
+	test('puts every folder in place, and leaves alone one the car has', async () => {
+		await Bun.write(
+			join(data, 'smartify-os/voice_assistant/models/silero-vad/silero_vad.onnx'),
+			'kept',
+		);
+		const { code, stderr } = downloads();
+		expect(code).toBe(0);
+		expect(stderr).toContain('1 of 2 were on the car already');
+		const models = join(data, 'smartify-os/voice_assistant/models');
+		expect(await Bun.file(join(models, 'whisper-base/tokens.txt')).text()).toBe('new');
+		expect(await Bun.file(join(models, 'silero-vad/silero_vad.onnx')).text()).toBe('kept');
+		expect(await Bun.file(join(models, 'whisper-base.part/tokens.txt')).exists()).toBe(false);
+	});
+
+	test('refuses a list that points outside the data folder', async () => {
+		await Bun.write(join(stick, 'downloads.list'), '../../etc\n');
+		const { code, stderr } = downloads();
+		expect(code).toBe(1);
+		expect(stderr).toContain('not a folder SmartifyOS puts downloads in');
+	});
+
+	test('says when a folder the list names is not on the stick', async () => {
+		await Bun.write(join(stick, 'downloads.list'), 'voice_assistant/models/parakeet\n');
+		const { code, stderr } = downloads();
+		expect(code).toBe(1);
+		expect(stderr).toContain('parakeet is missing from the USB stick');
+	});
+});

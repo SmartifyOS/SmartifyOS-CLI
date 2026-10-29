@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { androidSdkRoots, firstVersion } from './doctor.ts';
+import { androidSdkRoots } from '../android/tools.ts';
+import { firstVersion } from './doctor.ts';
 import { gitInstallHint, newestStable } from './flutter.ts';
 
 describe('newestStable', () => {

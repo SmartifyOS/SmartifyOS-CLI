@@ -6,7 +6,7 @@ import {
 	setVersion,
 } from '../../core/extension/release.ts';
 import { normalizeRepoUrl } from '../../core/git.ts';
-import { checkPackage } from '../../core/linux/collect.ts';
+import { checkPackageLists } from '../../core/package-check.ts';
 import { lastLines, run, runOrThrow } from '../../core/process.ts';
 import { requireExtension } from '../../core/project/find.ts';
 import { parsePubspec } from '../../core/pubspec/read.ts';
@@ -143,21 +143,25 @@ export const extensionReleaseCommand: Command = {
 };
 
 /**
- * Internal: what the extension lists for Linux has to be right before it goes out, since a
- * car would otherwise skip it with a warning its owner can do nothing about.
+ * Internal: what the extension lists under `smartify_os:` (for Linux, Android and its
+ * downloads) has to be right before it goes out, since a car would otherwise skip it with a
+ * warning its owner can do nothing about.
  */
 async function checkLinuxLists(dir: string, packageName: string): Promise<void> {
-	const problems = await checkPackage(dir, packageName);
+	const problems = await checkPackageLists(dir, packageName);
 	const mistakes = problems.filter((problem) => problem.kind === 'invalid');
 	if (mistakes.length > 0) {
-		throw new CliError('What pubspec.yaml lists for Linux has mistakes, so nothing was released.', {
-			hint: [
-				...listProblemLines(mistakes),
-				'',
-				'EXTENSIONS.md ("Linux packages") in the SmartifyOS repository says how to write it.',
-			].join('\n'),
-			details: mistakes,
-		});
+		throw new CliError(
+			'What pubspec.yaml lists under smartify_os has mistakes, so nothing was released.',
+			{
+				hint: [
+					...listProblemLines(mistakes),
+					'',
+					'EXTENSIONS.md ("Linux packages", "Android" and "Downloads") in the SmartifyOS repository says how to write it.',
+				].join('\n'),
+				details: mistakes,
+			},
+		);
 	}
 	const unknown = problems.filter((problem) => problem.kind === 'unknown');
 	if (unknown.length > 0) {

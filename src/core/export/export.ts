@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, rename, rm } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, rename, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { version as cliVersion } from '../../utils/version.ts';
+import { filesIn } from '../downloads/fetch.ts';
 import type { FlutterVersion } from '../flutter.ts';
 import type { AptNeed, CarNeeds } from '../linux/collect.ts';
 import { type LinuxArch, officialLinux } from '../linux/distro.ts';
@@ -34,6 +35,10 @@ import { packBundle, packSource } from './pack.ts';
  *   app.tar.gz             the finished build, when this computer built it
  *   packages/run/          what the car needs to run it, see src/core/linux/set.ts
  *   packages/build/        what the car needs to build it, when it does
+ *   downloads/             what the car's extensions download, picked by the owner (see
+ *                          src/core/downloads/): `downloads.list` names each folder, by its
+ *                          path in the car's data folder, and the folders are next to it.
+ *                          `linux.sh downloads` puts each one in place that is not there yet
  *   devices/               firmware for the devices on the car's CAN bus, written by
  *                          `smartify-os device export` (src/core/device/stick.ts) and kept
  *                          by every export
@@ -47,6 +52,18 @@ export type BuildOn = 'car' | 'computer';
 
 /** The name of the folder on the stick. */
 export const exportFolderName = 'smartify-os';
+
+/** The folder in it the downloads are in, and the file in that naming each. */
+export const downloadsOnStick = 'downloads';
+export const downloadsListName = 'downloads.list';
+
+/** One download going on the stick. */
+export interface StickDownload {
+	/** Where it goes in the car's data folder, `voice_assistant/models/whisper-base`. */
+	path: string;
+	/** The complete folder on this computer. */
+	from: string;
+}
 
 /** The folder in it the devices' firmware is in (`CanFirmwareFiles.folderName` in core). */
 export const devicesOnStick = 'devices';
@@ -70,6 +87,8 @@ export interface ExportInput {
 	flutter?: FlutterVersion;
 	/** The build, when this computer made it. */
 	built?: Built;
+	/** What the car's extensions download, to put on it with the app. */
+	downloads?: StickDownload[];
 	/** When it was made, for export.conf. */
 	now?: Date;
 }
@@ -200,7 +219,7 @@ export function renderReadme(input: ExportInput): string {
 export async function writeExport(
 	input: ExportInput,
 	target: string,
-	onStep?: (step: 'pack' | 'write') => void,
+	onStep?: (step: 'pack' | 'write' | 'downloads') => void,
 ): Promise<ExportResult> {
 	const folder = join(target, exportFolderName);
 	const staging = join(target, `.${exportFolderName}-new`);
@@ -230,6 +249,23 @@ export async function writeExport(
 			if (!input.built) throw new Error('A build on this computer needs its bundle.');
 			await packBundle(input.built.bundle, join(staging, 'app.tar.gz'));
 			files.push('app.tar.gz');
+		}
+
+		if (input.downloads?.length) {
+			onStep?.('downloads');
+			for (const download of input.downloads) {
+				for (const file of await filesIn(download.from)) {
+					const path = `${downloadsOnStick}/${download.path}/${file}`;
+					const full = join(staging, ...path.split('/'));
+					await mkdir(dirname(full), { recursive: true });
+					await copyFile(join(download.from, ...file.split('/')), full);
+					files.push(path);
+				}
+			}
+			await write(
+				`${downloadsOnStick}/${downloadsListName}`,
+				`${input.downloads.map((download) => download.path).join('\n')}\n`,
+			);
 		}
 
 		onStep?.('write');

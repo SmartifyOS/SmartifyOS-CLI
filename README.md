@@ -46,10 +46,11 @@ Set these before running the installer if you want something other than the defa
 
 ```bash
 smartify-os setup                      # install what SmartifyOS needs
+smartify-os setup --android            # and what building for an Android tablet needs
 smartify-os doctor                     # check what this computer has
 ```
 
-SmartifyOS is built with Flutter, and `setup` installs it for you: the newest stable release, into `~/.smartify-os/tools/flutter`, out of your way. If you have Flutter already, that one is used and nothing is installed. `setup --platformio` also sets up PlatformIO, which builds the devices on your car's CAN bus (it otherwise sets itself up the first time you build one). Flutter needs git, and `setup` tells you how to get it if it is missing.
+SmartifyOS is built with Flutter, and `setup` installs it for you: the newest stable release, into `~/.smartify-os/tools/flutter`, out of your way. If you have Flutter already, that one is used and nothing is installed. `setup --platformio` also sets up PlatformIO, which builds the devices on your car's CAN bus (it otherwise sets itself up the first time you build one). `setup --android` sets up building for an Android tablet: Google's Android SDK with its command line and platform tools, its licence accepted, and Java, unless Android Studio has them already. What it installs goes into `~/.smartify-os/tools` too, and Flutter is told where. Without either flag `setup` asks about both. Flutter needs git, and `setup` tells you how to get it if it is missing.
 
 `doctor` checks everything, the way `flutter doctor` does, and says what to do about anything missing:
 
@@ -58,9 +59,9 @@ SmartifyOS is built with Flutter, and `setup` installs it for you: the newest st
 | Flutter and git           | An error. SmartifyOS does nothing without them                                          |
 | Xcode and CocoaPods, Visual Studio, or the Linux build tools | A warning. Only needed for `smartify-os run`, trying your car's app on this computer |
 | PlatformIO                | A warning. Only needed for the devices on your car's CAN bus                            |
-| Android platform tools    | A warning. Only needed if your setup works with Android devices                          |
+| Android                   | A warning. Only needed when an Android tablet is your car's screen: the Android SDK, its command line and platform tools, its licence, and Java 17 or newer |
 
-It exits with 1 when there is an error, so a script can rely on it. With `--json` every check has an `id`, a `status` and what it found, and `fix` holds the arguments of the command that puts it right when there is one (`setup`, or `setup --platformio`).
+It exits with 1 when there is an error, so a script can rely on it. With `--json` every check has an `id`, a `status` and what it found, and `fix` holds the arguments of the command that puts it right when there is one (`setup`, `setup --platformio` or `setup --android`).
 
 ## Starting your car
 
@@ -184,7 +185,20 @@ SmartifyOS is built one of two ways, picked with `--build-on`:
 
 Building on this computer asks what the car runs on, or takes `--arch arm64` (a Raspberry Pi) or `--arch x64` (a PC). A Linux build only starts on the Linux it was built on, which is why it is built in a container of the car's Linux. The first build sets the container up with Flutter and everything building needs, which takes a while. It is kept, stopped, so every build after it is quick. Building for the other architecture than this computer's runs emulated and takes a good deal longer. `docker rm -f smartify-os-builder-arm64` (or `-x64`) throws a container away, if you ever want the space back.
 
+Some extensions download big files onto the car while it runs, like the voice assistant's speech models. A car often has no internet, so both commands ask which of them to put on the stick too, with the ones your car needs ticked already: what your app's settings pick, and lighter ones for a Raspberry Pi. They are downloaded on this computer once and kept in `~/.smartify-os/cache/downloads`, so the next car or update does not download them again, and the car leaves alone any it has already. `--download <name>` picks them without asking (again for more, `none` for nothing), and `--arch` says what the car runs on when the car builds SmartifyOS itself.
+
 Whatever your car needs installed on Linux (a driver, a program an extension runs, a library to build against) is installed for you, worked out from SmartifyOS, every extension and your own app. Extensions list it in their `pubspec.yaml`, see "Linux packages" in `EXTENSIONS.md`. It all goes in as one package called `smartify-os-run` (and `smartify-os-build` on a car that builds itself), so whatever an extension stops needing is taken out again, and nothing you installed yourself is ever touched. Something that would take part of the car's system out to make room is left out, with a warning naming the extension that asked for it.
+
+### On an Android tablet
+
+A tablet or phone can be the car's screen too. Plug it into this computer with USB debugging switched on, and:
+
+```bash
+smartify-os run --android              # try your car's app on it
+smartify-os export android             # put it on a USB stick as an app to install on the tablet
+```
+
+Your car's app gets its Android part the first time, set up the way SmartifyOS needs it: the whole screen, the permissions SmartifyOS and your extensions ask for, and the oldest Android they run on. Extensions say what they need in their `pubspec.yaml` (see "Android" in `EXTENSIONS.md`), and it is written again every time you add or update one. Building for Android needs the Android SDK and Java, which `setup --android` installs (or Android Studio has), and the first Android build offers to install them when they are missing. The CMake versions the packages need are installed into the SDK for you. The first build takes ten minutes or more.
 
 ## Devices
 

@@ -101,11 +101,11 @@ describe('parseLists', () => {
 	test('reports keys it does not know as unknown, not as mistakes', () => {
 		const { lists, problems } = parseLists({
 			linux: { run: { apt: ['iw'], systemd: ['x.service'] }, pipewire: {} },
-			android: {},
+			windows: {},
 		});
 		expect(lists.run).toEqual([{ package: 'iw', arch: undefined }]);
 		expect(problems.map((problem) => [problem.kind, problem.path])).toEqual([
-			['unknown', 'smartify_os.android'],
+			['unknown', 'smartify_os.windows'],
 			['unknown', 'smartify_os.linux.pipewire'],
 			['unknown', 'smartify_os.linux.run.systemd'],
 		]);

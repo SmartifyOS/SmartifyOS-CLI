@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { CliError } from '../../utils/errors.ts';
+import { findAndroidTools, missingAndroidTools } from '../android/tools.ts';
 import { isPlatformioReady, platformioRunsHere, platformioVersion } from '../device/platformio.ts';
 import { pioPath } from '../device/tools.ts';
 import { flutterVersion } from '../flutter.ts';
@@ -235,42 +235,43 @@ async function checkPlatformio(): Promise<Check> {
 	};
 }
 
-/** Where an Android SDK can be: where the owner said, then where Android Studio puts it. */
-export function androidSdkRoots(
-	env: Record<string, string | undefined> = process.env,
-	platform: NodeJS.Platform = process.platform,
-	home: string = homedir(),
-): string[] {
-	const fallback =
-		platform === 'darwin'
-			? join(home, 'Library', 'Android', 'sdk')
-			: platform === 'win32'
-				? join(env.LOCALAPPDATA ?? join(home, 'AppData', 'Local'), 'Android', 'Sdk')
-				: join(home, 'Android', 'Sdk');
-	const roots = [env.ANDROID_HOME, env.ANDROID_SDK_ROOT, fallback];
-	return roots.filter((root): root is string => typeof root === 'string' && root !== '');
-}
-
+/**
+ * Everything building a car's app for Android needs: the SDK with its command line and
+ * platform tools, its licence accepted, and a new enough Java (src/core/android/tools.ts).
+ * Only some cars have an Android tablet as their screen, so a missing piece is a warning.
+ */
 async function checkAndroid(): Promise<Check> {
 	const base = {
 		id: 'android',
-		title: 'Android platform tools',
-		neededFor: 'Only needed if your setup works with Android devices.',
+		title: 'Android',
+		neededFor: "Only needed when an Android tablet is your car's screen.",
 	} as const;
-	const adb = process.platform === 'win32' ? 'adb.exe' : 'adb';
-	const path =
-		androidSdkRoots()
-			.map((root) => join(root, 'platform-tools', adb))
-			.find((candidate) => existsSync(candidate)) ?? Bun.which('adb');
-	const result = path ? await probe(path, ['version']) : undefined;
-	if (!path || result?.code !== 0) {
+	const tools = await findAndroidTools();
+	const missing = missingAndroidTools(tools);
+	if (missing.length > 0) {
+		const none = !tools.sdk && !tools.java;
 		return {
 			...base,
 			status: 'warning',
-			summary: 'Not installed',
-			hint: 'Install Android Studio from https://developer.android.com/studio, or only the platform tools from https://developer.android.com/tools/releases/platform-tools',
+			summary: none ? 'Not set up' : `Missing ${listed(missing)}`,
+			hint: 'Run smartify-os setup --android, which installs what building for Android needs.',
+			fix: ['setup', '--android'],
+			...(tools.sdk ? { path: tools.sdk } : {}),
 		};
 	}
-	const version = firstVersion(/^Version .*$/m.exec(result.stdout)?.[0] ?? '');
-	return { ...base, status: 'ok', summary: version ? `adb ${version}` : 'adb', path };
+	const adb = tools.adb ? await probe(tools.adb, ['version']) : undefined;
+	const version = firstVersion(/^Version .*$/m.exec(adb?.stdout ?? '')?.[0] ?? '');
+	return {
+		...base,
+		status: 'ok',
+		summary: `The Android SDK, Java ${tools.java?.version}${version ? ` and adb ${version}` : ''}`,
+		...(tools.sdk ? { path: tools.sdk } : {}),
+	};
+}
+
+/** Internal: `a`, `a and b`, `a, b and c`. */
+function listed(items: string[]): string {
+	return items.length <= 1
+		? items.join('')
+		: `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 }

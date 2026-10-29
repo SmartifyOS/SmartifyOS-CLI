@@ -561,6 +561,11 @@ fi
 task 'Checking SmartifyOS has everything it needs to start' 'SmartifyOS has everything it needs to start' \
 	linux_sh check "$bundle"
 task 'Putting SmartifyOS in place' "Put SmartifyOS in $home_dir/app" put_in_place
+# What the extensions download (speech models, say), when the owner put any on the stick.
+if [ -f "$here/downloads/downloads.list" ]; then
+	task 'Putting what your extensions download on the car' 'Put what your extensions download on the car' \
+		linux_sh downloads "$here/downloads" --user "$user"
+fi
 task 'Setting the car up to start SmartifyOS' 'The car starts straight into SmartifyOS, from now on' \
 	linux_sh system
 

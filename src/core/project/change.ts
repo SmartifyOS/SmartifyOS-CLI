@@ -1,8 +1,9 @@
 import { rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
+import { type AndroidSync, syncAndroid } from '../android/project.ts';
 import { analyzeErrors, type Problem, packageConfigPath, pubGet, pubUpgrade } from '../flutter.ts';
-import { checkPackage } from '../linux/collect.ts';
 import type { ListProblem } from '../linux/lists.ts';
+import { checkPackageLists } from '../package-check.ts';
 import { lastLines } from '../process.ts';
 import { dependsOnCore, readPackageRoots, readPubspecIn } from '../pubspec/read.ts';
 import { corePackage } from '../smartify-os.ts';
@@ -57,7 +58,13 @@ export interface PackageProblems {
 	problems: Problem[];
 }
 
-export type ChangeResult = { ok: true } | { ok: false; failure: ChangeFailure };
+export type ChangeResult =
+	| {
+			ok: true;
+			/** What was written into the app's Android part for what it runs now. */
+			android?: AndroidSync;
+	  }
+	| { ok: false; failure: ChangeFailure };
 
 /** Internal: what the car's files hold at one moment, undefined for a file that is not there. */
 type Snapshot = Map<string, string | undefined>;
@@ -114,8 +121,19 @@ export async function writeLinks(
  *
  * Errors the app already had before the change are not the change's fault. They are only
  * looked for when there are errors at all, so the usual case costs one analysis, not two.
+ *
+ * A change that is kept also brings the app's Android part, when it has one, in line with
+ * what the packages it runs now need there (src/core/android/project.ts).
  */
 export async function tryChange(app: CarApp, change: Change): Promise<ChangeResult> {
+	const result = await tryChangeOnly(app, change);
+	if (!result.ok) return result;
+	const android = await syncAndroid(app.dir);
+	return android.android ? { ok: true, android } : result;
+}
+
+/** Internal: {@link tryChange} without what follows a change that is kept. */
+async function tryChangeOnly(app: CarApp, change: Change): Promise<ChangeResult> {
 	const before = await snapshot(app);
 
 	const undo = async () => {
@@ -194,7 +212,7 @@ async function checkLinuxLists(
 	for (const name of names) {
 		const root = roots.get(name);
 		if (!root) continue;
-		const problems = (await checkPackage(root, name)).filter((p) => p.kind === 'invalid');
+		const problems = (await checkPackageLists(root, name)).filter((p) => p.kind === 'invalid');
 		if (problems.length > 0) found.push({ name, problems });
 	}
 	return found;

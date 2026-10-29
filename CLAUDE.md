@@ -24,6 +24,8 @@ src/ui/             anything that talks to the terminal, including help renderin
 src/core/           process runners, config, paths, the real work
 src/core/linux/     what a car needs installed on Linux, and scripts/, the shell that runs on it
 src/core/device/    the ESP32s on a car's CAN bus and the boards on USB: their projects, PlatformIO, the stick
+src/core/android/   the car's Android project, and what building for Android needs on this computer
+src/core/downloads/ what extensions download onto the car, cached here and put on the stick
 src/utils/          small helpers with no opinion about the terminal
 scripts/build.ts    cross compiles every target
 ```
@@ -68,6 +70,12 @@ A car's `pubspec.yaml` names where SmartifyOS and every extension come from, und
 
 **The running app** is reached while `run --json` runs it: `{"call": ...}` on stdin goes to the Dart VM service `flutter run` prints (`src/core/vm-service.ts`), to the service extensions SmartifyOS registers in a debug build (`EditorBridge` in core), and every call gets a `reply` event. That is how the editor changes the app live.
 
+**Every package can say what it needs under `smartify_os:` in its pubspec**, all read through `readListingPackages` in `src/core/linux/collect.ts` and checked together by `checkPackageLists` (`src/core/package-check.ts`), which every change and every release runs: `linux:` (src/core/linux/), `android:` and `downloads:`.
+
+**The car's Android project** (`android/`, which `flutter create` makes and the owner never opens) is kept by `src/core/android/project.ts`: the full screen themes, the manifest's block of permissions between the CLI's two comments, and `minSdk` as `maxOf(flutter.minSdkVersion, N)` from the highest any package asks for. `tryChange` runs it after every change it keeps, and every Android build (`run --android`, `export android`) before it starts, through `prepareAndroid` in `src/ui/android.ts`, which also installs the CMake versions packages pin in their own `android/build.gradle` (`src/core/android/sdk.ts`). Nothing about a particular package is written in the CLI.
+
+**What an extension downloads** onto the car (`src/core/downloads/`) is a JSON file its pubspec names. `export installer` and `export update` ask which items go on the stick (picked by `required`, the extension's settings in lib/main.dart, and `default` by architecture), download them once into `~/.smartify-os/cache/downloads`, and put them under `downloads/` on the stick with a `downloads.list`. On the car `linux.sh downloads` moves each one into `~/.local/share/smartify-os/` as `<folder>.part` then a rename, the way the extensions download them themselves, and leaves alone a folder that is there. install.sh and core's `LinuxUpdateBackend` both run it.
+
 ## Creating a car
 
 `create` copies `smartify_os_app_template/` out of the SmartifyOS repo at the newest release, renames `my_car` and `My car`, and writes the owner's answers into its `lib/main.dart` as named arguments of the calls the template makes (`setUpMain` in `src/core/project/create.ts`). An answer whose call is not found is printed for the owner to add, never a failure. The layouts it offers are a copy of `Layouts` in core, so a new built-in layout is a change here too (and in the editor's new car dialog). `--dry-run` checks the answers and returns where the app would go, which the editor uses to check each page. `--from miata` copies the Miata app as it is, only its pubspec is pointed at SmartifyOS.
@@ -87,6 +95,8 @@ The official Linux is named in one place, `src/core/linux/distro.ts`: Debian 13,
 ## Flutter on the owner's computer
 
 `smartify-os setup` installs the newest stable Flutter into `~/.smartify-os/tools/flutter` (`src/core/setup/flutter.ts`), cloned at its tag the way `linux.sh flutter` does it on a car. Unlike PlatformIO it is only a fallback: `findFlutter` in `src/core/process.ts` takes a Flutter on PATH first, and `setup` never installs a second one next to it. `doctor` (`src/core/setup/doctor.ts`) fails only on what nothing works without (Flutter, git), everything else is a warning saying what it is for.
+
+Building for Android is the same idea (`src/core/android/tools.ts`): whatever Flutter builds with is used (Android Studio's SDK and its own Java, found through `flutter config --machine`), and only what is missing is installed, by `setup --android` or by the first Android build after the owner says yes: Temurin into `~/.smartify-os/tools/jdk` and the SDK's command line tools into `~/.smartify-os/tools/android-sdk`, each checked against the checksum its publisher lists, then the platform tools with sdkmanager, which also accepts Google's licence (the newest command line tools take no `--licenses`), and `flutter config` told where. Gradle downloads the rest itself. Big downloads are read with a stream reader, never `Bun.write(path, response)`, which spins and never finishes on one.
 
 ## The devices of a car
 

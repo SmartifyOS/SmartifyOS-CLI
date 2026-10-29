@@ -1,7 +1,7 @@
 import { type CarState, describeVersion, readCar } from '../core/project/car.ts';
 import type { ChangeFailure, ChangeStep } from '../core/project/change.ts';
 import type { CarApp } from '../core/project/find.ts';
-import { listProblemLines } from './linux.ts';
+import { listedFor, listProblemLines } from './linux.ts';
 import { log } from './output.ts';
 import { spinner } from './prompt.ts';
 import { theme } from './theme.ts';
@@ -43,7 +43,7 @@ export function renderChangeFailure(
 		for (const found of failure.packages) {
 			log.error(
 				[
-					`${theme.strong(titleOf(found.name))} lists something for Linux that cannot be installed:`,
+					`${theme.strong(titleOf(found.name))} lists something ${listedFor(found.problems[0]?.path ?? '')} that cannot be used:`,
 					...listProblemLines(found.problems),
 				].join('\n'),
 				{ package: found.name, title: titleOf(found.name), problems: found.problems },

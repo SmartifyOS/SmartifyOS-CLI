@@ -189,6 +189,28 @@ describe('writeExport', () => {
 		expect(result.files.some((file) => file.startsWith('devices/'))).toBe(false);
 	});
 
+	test('puts the downloads on it, listed for linux.sh and checked like everything else', async () => {
+		const stick = join(dir, 'stick-downloads');
+		const cached = join(dir, 'cache', 'silero-vad');
+		await Bun.write(join(cached, 'silero_vad.onnx'), 'vad');
+		await Bun.write(join(cached, 'nested', 'data.bin'), 'more');
+		const result = await writeExport(
+			{
+				...(await input('car')),
+				downloads: [{ path: 'voice_assistant/models/silero-vad', from: cached }],
+			},
+			stick,
+		);
+		const models = join(result.folder, 'downloads', 'voice_assistant', 'models');
+		expect(await Bun.file(join(models, 'silero-vad', 'nested', 'data.bin')).text()).toBe('more');
+		expect(await Bun.file(join(result.folder, 'downloads', 'downloads.list')).text()).toBe(
+			'voice_assistant/models/silero-vad\n',
+		);
+		const sums = await Bun.file(join(result.folder, 'SHA256SUMS')).text();
+		expect(sums).toContain('  downloads/voice_assistant/models/silero-vad/silero_vad.onnx\n');
+		expect(sums).toContain('  downloads/downloads.list\n');
+	});
+
 	test('there is nothing on a stick that never had an export', async () => {
 		expect(await readExistingExport(dir)).toBeUndefined();
 	});

@@ -174,13 +174,19 @@ async function verifyChecksum(plan: UpdatePlan, archivePath: string): Promise<vo
  * Unpacks a downloaded `.tar.gz` or `.zip`. Also how uv is unpacked, see
  * src/core/device/platformio.ts.
  *
- * `tar` on macOS, on Linux and on Windows 10 1803 and later is all bsdtar, and bsdtar reads
- * a zip as happily as a tar.gz, so one tool covers every platform there is a build for.
+ * `tar` on macOS and on Windows 10 1803 and later is bsdtar, which reads a zip as happily as
+ * a tar.gz. GNU tar on Linux reads no zip, so a zip is unpacked with `unzip` there, which
+ * Flutter needs on Linux too.
  */
 export async function unpack(archivePath: string, into: string): Promise<void> {
-	const args = archivePath.endsWith('.zip')
-		? ['tar', '-xf', archivePath, '-C', into]
-		: ['tar', '-xzf', archivePath, '-C', into];
+	const zip = archivePath.endsWith('.zip');
+	// Except GNU tar on Linux, which reads no zip. Flutter needs unzip there anyway.
+	const args =
+		zip && process.platform === 'linux'
+			? ['unzip', '-q', '-o', archivePath, '-d', into]
+			: zip
+				? ['tar', '-xf', archivePath, '-C', into]
+				: ['tar', '-xzf', archivePath, '-C', into];
 
 	let failure = '';
 	try {
@@ -198,7 +204,11 @@ export async function unpack(archivePath: string, into: string): Promise<void> {
 	if (process.platform === 'win32' && (await expandArchive(archivePath, into))) return;
 
 	throw new CliError('Could not unpack the download, so nothing was changed.', {
-		hint: failure || 'Make sure `tar` is installed, then try again.',
+		hint:
+			failure ||
+			(zip && process.platform === 'linux'
+				? 'Install unzip, for example with sudo apt install unzip, then try again.'
+				: 'Make sure `tar` is installed, then try again.'),
 	});
 }
 

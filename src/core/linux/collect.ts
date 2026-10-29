@@ -69,20 +69,41 @@ export interface CarNeeds {
 /** What the car's app itself is called when it asks for something. */
 export const appTitle = "Your car's app";
 
+/** A package with a `smartify_os:` key in its pubspec, and what the key holds. */
+export interface ListingPackage {
+	requester: Requester;
+	/** Its folder, as the car's app resolved it. */
+	root: string;
+	/** The value of `smartify_os:`. */
+	section: unknown;
+}
+
+/**
+ * Every package the car's app resolved that says something under `smartify_os:` in its
+ * pubspec, SmartifyOS first, the car's app last, everything else by name. Pub has to have
+ * run, see `ensureResolved`. What the Linux, Android and download lists all read.
+ */
+export async function readListingPackages(appDir: string): Promise<ListingPackage[]> {
+	const roots = await readPackageRoots(appDir);
+	const found: ListingPackage[] = [];
+	for (const [name, root] of [...roots].sort(byRequesterOrder(appDir))) {
+		const section = await readSmartifyOsSection(root);
+		if (section === undefined) continue;
+		const title =
+			root === appDir ? appTitle : name === corePackage ? 'SmartifyOS' : await titleOf(name, root);
+		found.push({ requester: { name, title }, root, section });
+	}
+	return found;
+}
+
 /**
  * Reads the lists of every package the car's app resolved. Pub has to have run, see
  * `ensureResolved`.
  */
 export async function collectNeeds(appDir: string): Promise<CarNeeds> {
-	const roots = await readPackageRoots(appDir);
 	const found: PackageFound[] = [];
-
-	for (const [name, root] of [...roots].sort(byRequesterOrder(appDir))) {
-		const read = await readPackageLists(root);
-		if (!read) continue;
-		const title =
-			root === appDir ? appTitle : name === corePackage ? 'SmartifyOS' : await titleOf(name, root);
-		const requester = { name, title };
+	for (const { requester, root, section } of await readListingPackages(appDir)) {
+		const read = parseLists(section);
 		const udev = await readRules(root, requester, read.lists.udev);
 		found.push({
 			requester,
@@ -91,7 +112,6 @@ export async function collectNeeds(appDir: string): Promise<CarNeeds> {
 			problems: [...read.problems, ...udev.problems],
 		});
 	}
-
 	return mergeNeeds(found);
 }
 
@@ -115,12 +135,10 @@ function byRequesterOrder(appDir: string) {
 }
 
 /**
- * The lists in the pubspec of one package's folder, or undefined when it lists nothing.
- * A pubspec that is not valid YAML is simply skipped: pub could not have resolved it.
+ * The value of `smartify_os:` in the pubspec of one package's folder, or undefined when it
+ * has none. A pubspec that is not valid YAML is simply skipped: pub could not have resolved it.
  */
-export async function readPackageLists(
-	root: string,
-): Promise<{ lists: PackageLists; problems: ListProblem[] } | undefined> {
+export async function readSmartifyOsSection(root: string): Promise<unknown | undefined> {
 	let text: string;
 	try {
 		text = await Bun.file(join(root, 'pubspec.yaml')).text();
@@ -136,8 +154,15 @@ export async function readPackageLists(
 	} catch {
 		return undefined;
 	}
-	if (!('smartify_os' in pubspec)) return undefined;
-	return parseLists(pubspec.smartify_os);
+	return 'smartify_os' in pubspec ? pubspec.smartify_os : undefined;
+}
+
+/** The Linux lists in the pubspec of one package's folder, or undefined when it lists nothing. */
+export async function readPackageLists(
+	root: string,
+): Promise<{ lists: PackageLists; problems: ListProblem[] } | undefined> {
+	const section = await readSmartifyOsSection(root);
+	return section === undefined ? undefined : parseLists(section);
 }
 
 /**

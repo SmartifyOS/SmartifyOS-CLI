@@ -24,7 +24,7 @@ export function renderNeedProblems(problems: NeedProblem[]): void {
 			continue;
 		}
 		log.warn(
-			`${theme.strong(problem.requester.title)} lists something for Linux that cannot be installed, so it is left out. ${problem.message} ${theme.dim('Tell its author.')}`,
+			`${theme.strong(problem.requester.title)} lists something ${listedFor(problem.path)} that cannot be used, so it is left out. ${problem.message} ${theme.dim('Tell its author.')}`,
 			problem,
 		);
 	}
@@ -34,6 +34,13 @@ export function renderNeedProblems(problems: NeedProblem[]): void {
 			list,
 		);
 	}
+}
+
+/** What a list under `smartify_os:` is for, by where a problem is: `for Linux`. */
+export function listedFor(path: string): string {
+	if (path.startsWith('smartify_os.android')) return 'for Android';
+	if (path.startsWith('smartify_os.downloads')) return 'to download onto the car';
+	return 'for Linux';
 }
 
 /** The lines explaining what is wrong with one package's lists, for an error. */

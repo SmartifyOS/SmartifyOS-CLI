@@ -22,6 +22,10 @@
 #   linux.sh system
 #       Sets the car up to start straight into SmartifyOS, as the user in
 #       /etc/smartify-os/car.conf: its service, passwordless sudo, its groups, a quiet start.
+#   linux.sh downloads <folder> [--user NAME]
+#       Puts what the car's extensions download in place, from a folder smartify-os wrote
+#       (its downloads.list names each), into ~/.local/share/smartify-os. One already there
+#       is left alone.
 #
 # It never asks anything. Installing needs root, or sudo that asks for no password.
 
@@ -1112,10 +1116,57 @@ cmd_system() {
 	system_boot
 }
 
+# -- Downloads ----------------------------------------------------------------------------
+
+# Each folder is made complete as <folder>.part next to where it goes, and only then renamed,
+# the way the extensions download them themselves: a folder that is there is a whole one, and
+# a .part left by a power cut is thrown away by the extension when it next starts.
+cmd_downloads() {
+	local from='' home data path count=0 kept=0
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--user) run_user=${2:-}; shift 2 ;;
+		-*) fail "linux.sh downloads does not take $1." ;;
+		*) from=$1; shift ;;
+		esac
+	done
+	[ -n "$from" ] || fail 'linux.sh downloads needs the folder they are in.'
+	[ -f "$from/downloads.list" ] || fail "There is no downloads.list in $from."
+
+	if [ -n "$run_user" ] && [ "$(id -un)" != "$run_user" ]; then
+		home=$(getent passwd "$run_user" | cut -d: -f6)
+		data="$home/.local/share/smartify-os"
+	else
+		data="${XDG_DATA_HOME:-$HOME/.local/share}/smartify-os"
+	fi
+
+	while IFS= read -r path || [ -n "$path" ]; do
+		[ -n "$path" ] || continue
+		# Only plain names, so nothing on a stick can point outside the data folder.
+		case "$path" in
+		/* | *..* | *[!A-Za-z0-9._/-]*) fail "downloads.list names $path, which is not a folder SmartifyOS puts downloads in." ;;
+		esac
+		[ -d "$from/$path" ] || fail "$path is missing from the USB stick." 'Export it again.'
+		count=$((count + 1))
+		if [ -d "$data/$path" ]; then
+			kept=$((kept + 1))
+			continue
+		fi
+		step "Putting ${path##*/} in place"
+		as_user mkdir -p "$(dirname "$data/$path")"
+		as_user rm -rf "$data/$path.part"
+		as_user cp -R "$from/$path" "$data/$path.part" ||
+			fail "${path##*/} could not be copied off the USB stick." 'Keep the stick plugged in, and check the car has room for it.'
+		as_user mv "$data/$path.part" "$data/$path"
+	done <"$from/downloads.list"
+
+	if [ "$kept" -gt 0 ]; then dim "$kept of $count were on the car already, and left as they are."; fi
+}
+
 # -- Entry --------------------------------------------------------------------------------
 
 usage() {
-	sed -n '3,26p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+	sed -n '3,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
 }
 
 main() {
@@ -1128,6 +1179,7 @@ main() {
 	flutter) cmd_flutter "$@" ;;
 	build) cmd_build "$@" ;;
 	system) cmd_system "$@" ;;
+	downloads) cmd_downloads "$@" ;;
 	-h | --help | help) usage ;;
 	*)
 		usage

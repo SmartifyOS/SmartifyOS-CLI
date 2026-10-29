@@ -96,7 +96,8 @@ export function parseLists(value: unknown): { lists: PackageLists; problems: Lis
 	const root = asMap(value, 'smartify_os', problem);
 	if (!root) return { lists, problems };
 	// `firmware` is SmartifyOS's own, read by the device commands (src/core/device/network.ts).
-	unknownKeys(root, ['linux', 'firmware'], 'smartify_os', problem);
+	// `android` is read by src/core/android/lists.ts, `downloads` by src/core/downloads/.
+	unknownKeys(root, ['linux', 'firmware', 'android', 'downloads'], 'smartify_os', problem);
 
 	const linux = asMap(root.linux, 'smartify_os.linux', problem);
 	if (!linux) return { lists, problems };
@@ -135,10 +136,14 @@ export function parseLists(value: unknown): { lists: PackageLists; problems: Lis
 	return { lists, problems };
 }
 
-type Report = (kind: ListProblem['kind'], path: string, message: string) => void;
+export type Report = (kind: ListProblem['kind'], path: string, message: string) => void;
 
 /** Internal: a map, or undefined (reported unless it is simply missing). */
-function asMap(value: unknown, path: string, problem: Report): Record<string, unknown> | undefined {
+export function asMap(
+	value: unknown,
+	path: string,
+	problem: Report,
+): Record<string, unknown> | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
 	problem('invalid', path, `${path} has to hold keys, like the example in EXTENSIONS.md.`);
@@ -146,7 +151,12 @@ function asMap(value: unknown, path: string, problem: Report): Record<string, un
 }
 
 /** Internal: reports every key that is not one of `known`. */
-function unknownKeys(map: Record<string, unknown>, known: string[], path: string, problem: Report) {
+export function unknownKeys(
+	map: Record<string, unknown>,
+	known: string[],
+	path: string,
+	problem: Report,
+) {
 	for (const key of Object.keys(map)) {
 		if (!known.includes(key)) {
 			problem('unknown', `${path}.${key}`, `This smartify-os does not know ${path}.${key}.`);
@@ -155,7 +165,7 @@ function unknownKeys(map: Record<string, unknown>, known: string[], path: string
 }
 
 /** Internal: the strings of a list, each with where it is. Anything else is reported. */
-function readStrings(
+export function readStrings(
 	value: unknown,
 	path: string,
 	problem: Report,
