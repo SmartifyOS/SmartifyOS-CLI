@@ -1,6 +1,12 @@
+import { join } from 'node:path';
 import { type BuiltFirmware, flashImages } from '../../core/device/build.ts';
 import { readFirmwareSource } from '../../core/device/network.ts';
-import { arduinoBoard, type DeviceProject, isUsbDevice } from '../../core/device/project.ts';
+import {
+	arduinoBoard,
+	type DeviceProject,
+	iniValue,
+	isUsbDevice,
+} from '../../core/device/project.ts';
 import { type UsbFirmware, writeDeviceFirmware } from '../../core/device/stick.ts';
 import { readExistingExport } from '../../core/export/export.ts';
 import { requireCar } from '../../core/project/find.ts';
@@ -8,6 +14,7 @@ import { intro, log, outro } from '../../ui/output.ts';
 import { readCarStep, step } from '../../ui/project.ts';
 import { isInteractive, multiselect, note } from '../../ui/prompt.ts';
 import { theme } from '../../ui/theme.ts';
+import { CliError } from '../../utils/errors.ts';
 import { pickTarget } from '../export/shared.ts';
 import { binaryName } from '../flags.ts';
 import type { Command } from '../types.ts';
@@ -132,6 +139,18 @@ async function usbFirmware(device: DeviceProject, built: BuiltFirmware): Promise
 			mcu: arduino.mcu ?? 'atmega328p',
 			...(arduino.uploadSpeed ? { uploadBaud: arduino.uploadSpeed } : {}),
 		};
+	}
+	// Another AVR board, named in platformio.ini by hand: avrdude too, never esptool.
+	const ini = await Bun.file(join(device.dir, 'platformio.ini')).text();
+	if (iniValue(ini, 'platform')?.startsWith('atmelavr')) {
+		const mcu = iniValue(ini, 'board_build.mcu');
+		if (!mcu) {
+			throw new CliError(`SmartifyOS does not know which chip the board ${device.board} has.`, {
+				hint: `Add a line like ${theme.code('board_build.mcu = atmega2560')} to ${join(device.dir, 'platformio.ini')}, with the chip on your board.`,
+			});
+		}
+		const speed = Number(iniValue(ini, 'upload_speed'));
+		return { tool: 'avrdude', mcu, ...(speed > 0 ? { uploadBaud: speed } : {}) };
 	}
 	return {
 		tool: 'esptool',

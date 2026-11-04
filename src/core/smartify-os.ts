@@ -30,8 +30,8 @@ export const templateFolder = 'smartify_os_extension_template';
 /** The folder of the repository the template for a new car's app is in. */
 export const appTemplateFolder = 'smartify_os_app_template';
 
-/** The folder of the repository the Miata app is in, the example car with everything in it. */
-export const miataFolder = 'smartify_os_miata_app';
+/** The folder of the repository the example app is in, a car with one of everything in it. */
+export const exampleFolder = 'smartify_os_example_app';
 
 /**
  * The SmartifyOS repository. `SMARTIFY_OS_CORE_REPO` points somewhere else, for trying a

@@ -270,7 +270,9 @@ Future<void> main() async {
 }
 `;
 		const edited = addToInit(source, element) ?? '';
-		expect(edited).toContain(`    can: CanConfig(devices: [${element}]),\n  );`);
+		expect(edited).toContain(
+			`    // The CAN bus, and the devices on it.\n    can: const CanConfig(devices: [${element}]),\n\n    extensions: [],`,
+		);
 		expect(edited).toContain("import 'package:smartify_os_core/can.dart';\n");
 		expect(addToInit(edited, element)).toBeUndefined();
 	});

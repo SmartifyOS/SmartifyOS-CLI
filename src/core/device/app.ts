@@ -8,6 +8,7 @@ import {
 	closingBracket,
 	codeOnly,
 	onlyMatch,
+	setArgumentAt,
 } from '../project/main-dart.ts';
 
 /**
@@ -173,6 +174,10 @@ export function addToInit(source: string, element: string): string | undefined {
 	if (!init) return undefined;
 	const open = init.index + init[0].length - 1;
 	if (/\bcan\s*:/.test(code.slice(open, closingBracket(code, open)))) return undefined;
-	const edited = appendElement(source, code, open, `can: CanConfig(devices: [${element}])`);
-	return addImportLine(edited, "import 'package:smartify_os_core/can.dart';");
+	// In front of extensions:, like everything else the CLI adds.
+	const edited = setArgumentAt(source, open, 'can', `const CanConfig(devices: [${element}])`, {
+		before: 'extensions',
+		comment: ['The CAN bus, and the devices on it.'],
+	});
+	return edited && addImportLine(edited, "import 'package:smartify_os_core/can.dart';");
 }

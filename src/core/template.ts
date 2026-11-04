@@ -6,7 +6,7 @@ import { coreRepoUrl } from './smartify-os.ts';
 
 /**
  * Copying a folder out of the SmartifyOS repository to start something new from: the
- * extension template, the app template, or the Miata app.
+ * extension template, the app template, or the example app.
  */
 
 /** What is never copied: what a machine made, not what the folder is. */

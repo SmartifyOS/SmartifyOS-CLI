@@ -28,6 +28,7 @@ import {
 	partNames,
 	type RegisterSpec,
 	registerIn,
+	snakeName,
 	unregisterIn,
 	usedIn,
 } from './parts.ts';
@@ -491,8 +492,10 @@ function choiceOptions(labels: string[], before: { value: string; label: string 
 		.map((label) => label.trim())
 		.filter(Boolean)
 		.map((label) => {
-			let value = before.find((option) => option.label === label)?.value ?? partNames(label).snake;
-			for (let n = 2; used.has(value); n++) value = `${partNames(label).snake}_${n}`;
+			// A plain string, so "30 seconds" is 30_seconds.
+			const base = snakeName(label) || 'option';
+			let value = before.find((option) => option.label === label)?.value ?? base;
+			for (let n = 2; used.has(value); n++) value = `${base}_${n}`;
 			used.add(value);
 			return { value, label };
 		});

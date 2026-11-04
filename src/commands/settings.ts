@@ -1,5 +1,5 @@
 import { requireCar } from '../core/project/find.ts';
-import { parseOrder, partIcons, partNames } from '../core/project/parts.ts';
+import { parseOrder, partIcons, partNames, snakeName } from '../core/project/parts.ts';
 import {
 	addRow,
 	builtInPages,
@@ -375,7 +375,8 @@ function rowChange(
 			const known = options.find(
 				(option) => option.value === flags.default || option.label === byLabel,
 			);
-			change.default = known?.value ?? (byLabel ? partNames(byLabel).snake : String(flags.default));
+			change.default =
+				known?.value ?? (byLabel ? snakeName(byLabel) || 'option' : String(flags.default));
 		}
 	}
 	return change;

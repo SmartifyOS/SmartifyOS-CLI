@@ -236,6 +236,16 @@ function code(key: string, describe: string): SchemaField {
 	return { key, type: 'code', default: null, describe };
 }
 
+/** A point in the 3D model that has to be given, a camera's or a lamp's. */
+const point = (key: string, describe: string): SchemaField => ({
+	key,
+	type: 'offset3d',
+	default: null,
+	required: true,
+	describe,
+	imports: [core('car')],
+});
+
 const axes = (key: string, fallback: string, describe: string) =>
 	choice(key, 'RotationAxis', ['x', 'y', 'z'], fallback, describe, [core('car')]);
 
@@ -376,6 +386,34 @@ const schema: SchemaField[] = [
 					),
 					number('wheelCircumference', 1.9, 'How far one turn of a wheel goes, in metres'),
 				]),
+				{
+					key: 'cameras',
+					type: 'list',
+					className: 'CarModel3DCameraConfig',
+					default: [],
+					describe: 'Places to look at it from, for a CarView in a window to ask for by name',
+					imports: [core('car')],
+					fields: [
+						text('name', null, 'What a CarView asks for it by', { required: true }),
+						point('position', 'Where the camera is, in the model units of the file'),
+						point('lookAt', 'The point it looks at, in the model units of the file'),
+						number('fieldOfView', 60, 'How wide it sees, top to bottom, in degrees'),
+					],
+				},
+				{
+					key: 'lights',
+					type: 'list',
+					className: 'CarModel3DLightConfig',
+					default: [],
+					describe: 'Lamps in it, off until your code switches one on',
+					imports: [core('car')],
+					fields: [
+						text('name', null, 'What turnOnLight switches it by', { required: true }),
+						point('position', 'Where the lamp is, in the model units of the file'),
+						number('reach', 1.2, 'How far its light reaches, in model units'),
+						number('brightness', 3, 'How bright it is when switched on'),
+					],
+				},
 				section('render', 'CarModel3DRenderConfig', [core('car')], 'How it is drawn', [
 					number('scale', 1.5, 'How many pixels it is drawn with, next to the screen'),
 					number('exposure', 1.15, 'How bright it is'),
@@ -618,7 +656,17 @@ const schema: SchemaField[] = [
 	]),
 	section('volume', 'VolumeConfig', [core('volume')], 'The volume', [
 		bool('enabled', true, 'Change the volume at all'),
+		number(
+			'boostedMaxVolume',
+			1.5,
+			'How loud once the driver allows louder than 100%, 1.5 is 150%, 1 leaves it out',
+		),
 		code('backend', 'A volume of your own'),
+	]),
+	section('power', 'PowerConfig', [core('power')], 'Switching the computer off', [
+		bool('enabled', true, 'Offer the power button in the quick settings'),
+		duration('delay', 2000, 'How long the logo shows before the computer switches off'),
+		code('backend', 'Switching off of your own'),
 	]),
 	section('updates', 'UpdatesConfig', [core('updates')], 'Updates from a USB drive', [
 		bool('enabled', true, 'Offer an update from a USB drive'),
@@ -648,6 +696,7 @@ const comments: Record<string, string> = {
 	gps: 'Where the car is, and how fast it goes.',
 	drives: 'USB drives plugged into the car.',
 	volume: 'The volume.',
+	power: 'Switching the computer off, from the power button in the quick settings.',
 	updates: 'Updates from a USB drive.',
 };
 for (const field of schema) {

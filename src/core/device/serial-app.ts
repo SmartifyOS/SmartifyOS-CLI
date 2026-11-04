@@ -4,7 +4,6 @@ import { analyzeErrors, packageConfigPath } from '../flutter.ts';
 import { formatDart } from '../project/dart-file.ts';
 import {
 	addImportLine,
-	appendElement,
 	closingBracket,
 	codeOnly,
 	onlyMatch,
@@ -214,7 +213,10 @@ export function addSerialToInit(source: string, element: string): string | undef
 	if (!init) return undefined;
 	const open = init.index + init[0].length - 1;
 	if (/\bserial\s*:/.test(code.slice(open, closingBracket(code, open)))) return undefined;
-	return appendElement(source, code, open, `serial: SerialConfig(devices: [${element}])`);
+	return setArgumentAt(source, open, 'serial', `const SerialConfig(devices: [${element}])`, {
+		before: 'extensions',
+		comment: ['The boards on a USB cable, an Arduino or an ESP32.'],
+	});
 }
 
 /**

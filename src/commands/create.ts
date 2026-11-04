@@ -31,8 +31,8 @@ import { findProject } from '../core/project/find.ts';
 import {
 	appTemplateFolder,
 	type CoreAt,
+	exampleFolder,
 	isReleaseTag,
-	miataFolder,
 	newestCore,
 } from '../core/smartify-os.ts';
 import { copyFolder, withCoreFolder } from '../core/template.ts';
@@ -46,7 +46,7 @@ import { binaryName } from './flags.ts';
 import type { Command, Flags } from './types.ts';
 
 /** What a new car's app can start from. */
-type Start = 'minimal' | 'miata';
+type Start = 'minimal' | 'example';
 
 /** What `--bar` takes, and the `BarContent` each one is. */
 export const barFlag: Record<string, BarChoice> = {
@@ -55,7 +55,7 @@ export const barFlag: Record<string, BarChoice> = {
 	both: 'infoDisplayAndDock',
 };
 
-/** The flags that set a minimal app up, which the Miata app has no use for. */
+/** The flags that set a minimal app up, which the example app has no use for. */
 const setupFlags = [
 	'name',
 	'car',
@@ -77,17 +77,17 @@ export const createCommand: Command = {
 	aliases: ['new'],
 	summary: "Create your car's app",
 	description:
-		"Creates the app for your car, the one you then try, add extensions to and put on the car. It asks for what is different in every car (its name, how the screen is laid out, which side the driver sits on, a picture of it) and writes your answers into lib/main.dart, where you can change them any time. Or it copies the Miata app, the example car with everything in it, to learn from. Inside a car's app folder the new one goes next to it, anywhere else right where you are.",
+		"Creates the app for your car, the one you then try, add extensions to and put on the car. It asks for what is different in every car (its name, how the screen is laid out, which side the driver sits on, a picture of it) and writes your answers into lib/main.dart, where you can change them any time. Or it copies the example app, a car with one of everything SmartifyOS lets you add, to learn from. Inside a car's app folder the new one goes next to it, anywhere else right where you are.",
 	usage: '[name]',
 	examples: [
 		`${binaryName} create`,
 		`${binaryName} create "Golf 4" --car "Volkswagen Golf IV" --layout split --driver-side right`,
-		`${binaryName} create --from miata`,
+		`${binaryName} create --from example`,
 	],
 	flags: {
 		from: {
 			type: 'string',
-			describe: 'What to start from: minimal (the default, set up for your car) or miata',
+			describe: 'What to start from: minimal (the default, set up for your car) or example',
 		},
 		name: { type: 'string', describe: 'What the car is called, like "Miata"' },
 		car: { type: 'string', describe: 'What car it is, for the About page, like "Mazda MX-5 NB"' },
@@ -117,15 +117,15 @@ export const createCommand: Command = {
 		const asking = isInteractive() && flags.yes !== true;
 
 		const start = await pickStart(flags, asking);
-		const names = start === 'miata' ? undefined : carNames(await askName(flags, positionals[0]));
-		const folderName = names?.packageName ?? miataFolder;
+		const names = start === 'example' ? undefined : carNames(await askName(flags, positionals[0]));
+		const folderName = names?.packageName ?? exampleFolder;
 
-		if (start === 'miata') {
+		if (start === 'example') {
 			const ignored = setupFlags.filter((flag) => flags[flag] !== undefined);
 			if (positionals[0]) ignored.unshift('a name');
 			if (ignored.length > 0) {
 				log.warn(
-					`The Miata app is copied as it is, so ${ignored.map((flag) => (flag.includes(' ') ? flag : `--${flag}`)).join(', ')} ${ignored.length === 1 ? 'was' : 'were'} left out. Change it in ${theme.code('lib/main.dart')} instead.`,
+					`The example app is copied as it is, so ${ignored.map((flag) => (flag.includes(' ') ? flag : `--${flag}`)).join(', ')} ${ignored.length === 1 ? 'was' : 'were'} left out. Change it in ${theme.code('lib/main.dart')} instead.`,
 				);
 			}
 		}
@@ -159,9 +159,9 @@ export const createCommand: Command = {
 				);
 			} else {
 				await step(
-					'Copying the Miata app',
-					() => createFromMiata(target, core),
-					() => `Copied the Miata app to ${theme.code(relative(cwd, target) || '.')}`,
+					'Copying the example app',
+					() => createFromExample(target, core),
+					() => `Copied the example app to ${theme.code(relative(cwd, target) || '.')}`,
 				);
 			}
 			await addMissingPlatforms(target, folderName);
@@ -191,7 +191,7 @@ export const createCommand: Command = {
 				target,
 				names
 					? `Create ${names.name} from the SmartifyOS template`
-					: 'Copy the Miata app from SmartifyOS',
+					: 'Copy the example app from SmartifyOS',
 			),
 		);
 		if (!committed) {
@@ -215,7 +215,7 @@ export const createCommand: Command = {
 					kind: 'edit-main',
 					text: names
 						? `Everything about ${names.name} is set up in ${theme.code('lib/main.dart')}.`
-						: `It is the Miata's, so give it your car's name, picture and the rest in ${theme.code('lib/main.dart')}.`,
+						: `It is the example's, so give it your car's name, picture and the rest in ${theme.code('lib/main.dart')}.`,
 					path: 'lib/main.dart',
 				},
 				{ kind: 'run', text: `${theme.code(`${binaryName} run`)}  tries it on this computer` },
@@ -230,13 +230,13 @@ export const createCommand: Command = {
 			],
 			{ numbered: false },
 		);
-		outro(`${theme.success(theme.strong(names?.name ?? 'The Miata app'))} is ready`);
+		outro(`${theme.success(theme.strong(names?.name ?? 'The example app'))} is ready`);
 
 		return {
 			changed: true,
 			from: start,
 			name: names?.name ?? null,
-			packageName: names?.packageName ?? miataFolder,
+			packageName: names?.packageName ?? exampleFolder,
 			path: target,
 			smartifyOs: label,
 			setup: setup ?? null,
@@ -246,13 +246,21 @@ export const createCommand: Command = {
 	},
 };
 
-/** Internal: the minimal app or the Miata app. */
+/** Internal: the minimal app or the example app. */
 async function pickStart(flags: Flags, asking: boolean): Promise<Start> {
 	if (typeof flags.from === 'string') {
 		const from = flags.from.trim().toLowerCase();
-		if (from === 'minimal' || from === 'miata') return from;
+		if (from === 'minimal' || from === 'example') return from;
+		// The Miata app was the example until it became a car of its own, and older
+		// guides still say --from miata.
+		if (from === 'miata') {
+			log.warn(
+				`The Miata app is now the example app, so that is what you get. Say ${theme.code('--from example')} from now on.`,
+			);
+			return 'example';
+		}
 		throw new CliError(`There is nothing called "${flags.from}" to start from.`, {
-			hint: 'Use --from minimal for an app set up for your car, or --from miata for the Miata app.',
+			hint: 'Use --from minimal for an app set up for your car, or --from example for the example app.',
 		});
 	}
 	if (!asking) return 'minimal';
@@ -265,9 +273,9 @@ async function pickStart(flags: Flags, asking: boolean): Promise<Start> {
 				hint: 'only what every car needs, recommended',
 			},
 			{
-				value: 'miata',
-				label: 'A copy of the Miata app',
-				hint: 'the example car with everything in it, to learn from',
+				value: 'example',
+				label: 'A copy of the example app',
+				hint: 'a car with one of everything in it, to learn from',
 			},
 		],
 		initialValue: 'minimal',
@@ -530,7 +538,7 @@ async function createFromTemplate(
 	core: CoreAt,
 ): Promise<string[]> {
 	const missing = new CliError(`SmartifyOS ${core.source.ref} has no template for a new car.`, {
-		hint: `Start from the Miata app instead, with ${theme.code(`${binaryName} create --from miata`)}.`,
+		hint: `Start from the example app instead, with ${theme.code(`${binaryName} create --from example`)}.`,
 	});
 	await withCoreFolder(core.source.ref, appTemplateFolder, missing, (dir) =>
 		copyFolder(dir, target, (text) => renameCarText(text, names)),
@@ -557,12 +565,16 @@ async function createFromTemplate(
 	return main.manual;
 }
 
-/** Internal: the Miata app as it is, with its pubspec pointed at SmartifyOS. */
-async function createFromMiata(target: string, core: CoreAt): Promise<void> {
-	const missing = new CliError(`SmartifyOS ${core.source.ref} has no Miata app.`, {
+/**
+ * Internal: the example app as it is, its `devices/` and `firmware/` included, with its
+ * pubspec pointed at SmartifyOS. Nothing is renamed: it uses `Example` in names of its own
+ * (`ExampleLights`, `exampleLayouts`), which a plain replace would rename too.
+ */
+async function createFromExample(target: string, core: CoreAt): Promise<void> {
+	const missing = new CliError(`SmartifyOS ${core.source.ref} has no example app.`, {
 		hint: `Start from a new app instead, with ${theme.code(`${binaryName} create --from minimal`)}.`,
 	});
-	await withCoreFolder(core.source.ref, miataFolder, missing, (dir) => copyFolder(dir, target));
+	await withCoreFolder(core.source.ref, exampleFolder, missing, (dir) => copyFolder(dir, target));
 
 	const pubspecPath = join(target, 'pubspec.yaml');
 	const pubspec = await Bun.file(pubspecPath).text();

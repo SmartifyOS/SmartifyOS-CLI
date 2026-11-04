@@ -15,6 +15,7 @@ import {
 	createDevice,
 	createUsbDevice,
 	deviceName,
+	deviceNameProblem,
 	devicesFolder,
 	listDevices,
 } from '../../core/device/project.ts';
@@ -53,7 +54,7 @@ export const deviceCreateCommand: Command = {
 	name: 'create',
 	aliases: ['new'],
 	summary: 'Make the program of a device',
-	description: `Makes a folder in ${devicesFolder}/ for one of the devices on your car's CAN bus, or a board on a USB cable (--usb), with its program in src/main.cpp, ready to build for its board. Pick a device your car's app defines, or a new one, which it puts into your car's app for you. A board on USB is the simpler way for a car with only one or two: any ESP32, an Arduino Uno or Nano, with no CAN bus. Run it in your car's app folder.`,
+	description: `Makes a folder in ${devicesFolder}/ for one of the devices on your car's CAN bus, or a board on a USB cable (--usb), with its program in src/main.cpp, ready to build for its board. Pick a device your car's app defines, or a new one, which it puts into your car's app for you. A board on USB is the simpler way for a car with only one or two: any ESP32, an Arduino Uno, Nano or Mega, with no CAN bus. Run it in your car's app folder.`,
 	usage: '[name]',
 	examples: [
 		`${binaryName} device create`,
@@ -65,7 +66,7 @@ export const deviceCreateCommand: Command = {
 		board: {
 			type: 'string',
 			describe:
-				'Its board: esp32, esp32-s3, esp32-c3, or any PlatformIO ESP32 name, and for --usb also uno, nano or nano-old',
+				'Its board: esp32, esp32-s3, esp32-c3, or any PlatformIO ESP32 name, and for --usb also uno, nano, nano-old or mega',
 		},
 		title: {
 			type: 'string',
@@ -274,11 +275,8 @@ async function describeNew(
 		).trim();
 	}
 	const name = givenName ?? deviceName(title);
-	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-		throw new CliError(`${name} cannot be a device's name.`, {
-			hint: 'Letters and digits, starting with a letter, like seatHeater.',
-		});
-	}
+	const problem = deviceNameProblem(name);
+	if (problem) throw problem;
 	if (known.some((d) => cppName(d.name) === name)) {
 		throw new CliError(`Your car has a device called ${name} already.`, {
 			hint: 'Give the new one another name.',
@@ -456,11 +454,8 @@ async function describeNewUsb(
 		).trim();
 	}
 	const name = givenName ?? deviceName(title);
-	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
-		throw new CliError(`${name} cannot be a board's name.`, {
-			hint: 'Letters and digits, starting with a letter, like dashboard.',
-		});
-	}
+	const problem = deviceNameProblem(name);
+	if (problem) throw problem;
 	if (known.some((d) => d.name === name)) {
 		throw new CliError(`Your car has a board called ${name} already.`, {
 			hint: 'Give the new one another name.',

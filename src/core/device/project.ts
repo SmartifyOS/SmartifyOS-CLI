@@ -94,6 +94,15 @@ export const arduinoBoards: Board[] = [
 		mcu: 'atmega328p',
 		uploadSpeed: 57600,
 	},
+	{
+		id: 'megaatmega2560',
+		label: 'Arduino Mega',
+		chip: 'atmega2560',
+		aliases: ['mega', 'arduino-mega', 'mega2560'],
+		platform: 'atmelavr',
+		mcu: 'atmega2560',
+		uploadSpeed: 115200,
+	},
 ];
 
 /**
@@ -132,6 +141,38 @@ export function deviceName(title: string): string {
 		.map((word, index) => (index === 0 ? word : `${word[0]?.toUpperCase() ?? ''}${word.slice(1)}`))
 		.join('');
 	return /^[0-9]/.test(name) ? `device${name}` : name || 'device';
+}
+
+/**
+ * Names Dart has a meaning for already: its keywords, and `main`, which a constant of the
+ * same name in the car's app would clash with.
+ */
+const dartNames = new Set(
+	(
+		'abstract as assert async await base break case catch class const continue covariant ' +
+		'default deferred do dynamic else enum export extends extension external factory false ' +
+		'final finally for function get hide if implements import in interface is late library ' +
+		'main mixin new null of on operator part required rethrow return sealed set show static ' +
+		'super switch sync this throw true try type typedef var void when while with yield'
+	).split(' '),
+);
+
+/**
+ * Why a device can not be called `name` in the car's app, or undefined when it can. A board
+ * called `main`, say, would clash with Dart's `main()`.
+ */
+export function deviceNameProblem(name: string): CliError | undefined {
+	if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+		return new CliError(`${name} cannot be a device's name.`, {
+			hint: 'Letters and digits, starting with a letter, like seatHeater.',
+		});
+	}
+	if (dartNames.has(name)) {
+		return new CliError(`${name} cannot be a device's name, Dart has a meaning for it already.`, {
+			hint: `Give it a word more, like ${name}Board.`,
+		});
+	}
+	return undefined;
 }
 
 /** What the CLI keeps about a device, in its {@link settingsName}. */

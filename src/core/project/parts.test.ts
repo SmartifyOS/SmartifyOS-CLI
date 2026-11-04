@@ -6,6 +6,7 @@ import {
 	readCall,
 	readPart,
 	register,
+	registerIn,
 	unregister,
 } from './parts.ts';
 
@@ -29,8 +30,18 @@ describe('partNames', () => {
 		});
 	});
 
+	test('spells out a number it starts with, since a class cannot', () => {
+		expect(partNames('0 to 100')).toMatchObject({
+			name: '0 to 100',
+			snake: 'zero_to_100',
+			pascal: 'ZeroTo100',
+		});
+		expect(partNames('250 km').snake).toBe('two_hundred_fifty_km');
+		expect(partNames('1999').snake).toBe('one_thousand_nine_hundred_ninety_nine');
+	});
+
 	test('refuses a name that cannot be a file and a class', () => {
-		expect(() => partNames('2 fast')).toThrow('has to start with a letter');
+		expect(() => partNames('2nd gear')).toThrow('has to start with a letter');
 		expect(() => partNames('$cash')).toThrow('cannot be the name');
 	});
 });
@@ -39,6 +50,23 @@ describe('register', () => {
 	test('adds to a list that is there, and takes const off around it', () => {
 		const edited = register(main, 'window', 'TripWindow.appListEntry');
 		expect(edited).toContain('appList: AppListConfig(entries: [TripWindow.appListEntry]),');
+	});
+
+	test('keeps what was const inside a config it takes const off', () => {
+		const source = `Future<void> main() async {
+  await SmartifyOs().init(
+    settings: const SettingsConfig(about: AboutConfig(deviceName: 'Car'), hiddenPages: {}),
+  );
+}
+`;
+		const edited = registerIn(
+			source,
+			{ config: 'SettingsConfig', list: 'pages', argument: 'settings', comment: '', import: '' },
+			'lightsPage',
+		);
+		expect(edited).toContain(
+			"settings: SettingsConfig(about: const AboutConfig(deviceName: 'Car'), hiddenPages: const {}, pages: [lightsPage]),",
+		);
 	});
 
 	test('adds the config when there is none', () => {

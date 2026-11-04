@@ -26,9 +26,8 @@ import 'package:smartify_os_core/settings.dart';
 /// The SmartifyOS app of My car.
 ///
 /// Everything about the car is set up in \`SmartifyOs().init(...)\` below. The
-/// Miata app in the SmartifyOS repository is a complete example of a car with
-/// everything in it (its own settings, home widgets, quick settings, the CAN
-/// bus and a knob to drive it all), to copy from whenever you want more.
+/// example app in the SmartifyOS repository has one of everything SmartifyOS
+/// lets you add, to copy from whenever you want more.
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -298,8 +297,8 @@ describe('finishAppPubspec', () => {
 		expect(text).toContain('# Where SmartifyOS and every extension come from.');
 	});
 
-	test('moves an extension the Miata app names by git to the overrides', () => {
-		const miata = `name: smartify_os_miata_app
+	test('moves an extension an app names by git to the overrides', () => {
+		const app = `name: smartify_os_older_app
 dependencies:
   flutter:
     sdk: flutter
@@ -318,7 +317,7 @@ flutter:
   assets:
     - assets/miata_model.glb
 `;
-		const pubspec = parsePubspec(finishAppPubspec(miata, core), 'pubspec.yaml');
+		const pubspec = parsePubspec(finishAppPubspec(app, core), 'pubspec.yaml');
 		expect(pubspec.dependencies?.smartify_os_android_auto).toBe('any');
 		expect(pubspec.dependency_overrides?.smartify_os_android_auto).toEqual({
 			git: { url: 'https://github.com/Mauznemo/smartify_os_android_auto.git', ref: 'f01bef' },

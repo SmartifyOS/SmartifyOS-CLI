@@ -79,7 +79,7 @@ smartify-os create "Golf 4" --car "Volkswagen Golf IV" --layout split --driver-s
 
 `--dry-run` only checks the answers and says where the app would go, without creating anything.
 
-`smartify-os create --from miata` copies the Miata app instead, the example car with everything in it, to learn from. It is copied as it is, so you give it your car's name and the rest in its `lib/main.dart` yourself.
+`smartify-os create --from example` copies the example app instead, a pretend car with one of everything SmartifyOS lets you add (windows, tiles, widgets, a settings page, a layout and theme, a device on the CAN bus with its firmware, both extensions), to learn from. It is copied as it is, so you give it your car's name and the rest in its `lib/main.dart` yourself. `--from miata`, which older guides say, gets you the example too.
 
 ## Your car
 
@@ -213,7 +213,7 @@ smartify-os device list                # the devices with a program, and their v
 smartify-os device edit dashboard --baud-rate 9600   # change a board on USB
 ```
 
-A car with only one or two boards can leave the CAN bus out: a board on a USB cable (any ESP32, an Arduino Uno or Nano) talks to the car over serial. `device create --usb` puts it into your car's app as a `SerialDevice` in `lib/serial.dart` and its `SerialConfig`, and makes a plain Arduino sketch for it, with no library, that says which device it is when the car asks (`smartify-os:<name>`), so the car finds it on whichever port it is plugged into. `device export` puts its firmware on a stick too (every file esptool or avrdude writes, and a `.conf` with `CONNECTION=usb`), and the car writes it onto the board over its USB cable once the driver taps Update on the notification, with the esptool or avrdude the installer puts on the car.
+A car with only one or two boards can leave the CAN bus out: a board on a USB cable (any ESP32, an Arduino Uno, Nano or Mega) talks to the car over serial. `device create --usb` puts it into your car's app as a `SerialDevice` in `lib/serial.dart` and its `SerialConfig`, and makes a plain Arduino sketch for it, with no library, that says which device it is when the car asks (`smartify-os:<name>`), so the car finds it on whichever port it is plugged into. `device export` puts its firmware on a stick too (every file esptool or avrdude writes, and a `.conf` with `CONNECTION=usb`), and the car writes it onto the board over its USB cable once the driver taps Update on the notification, with the esptool or avrdude the installer puts on the car.
 
 The devices and their messages are defined in your car's app, and `smartify-os run` writes them out as `firmware/smartify_os_network.h` for the devices' programs. Building is done by [PlatformIO](https://platformio.org/), which the CLI installs by itself into `~/.smartify-os/tools` the first time, with a Python of its own, so there is nothing to install. The first build also downloads the ESP32 tools, which takes a few minutes. Every device is built against the SmartifyOS-ESP32 library release your car's SmartifyOS names, and gets the board's default partition table, which has room for updates over the bus.
 

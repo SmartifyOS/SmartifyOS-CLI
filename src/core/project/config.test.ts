@@ -172,6 +172,47 @@ describe('setConfig', () => {
 		]);
 	});
 
+	test('adds a camera and a lamp to the 3D model, with their points', () => {
+		const { source } = setConfig(main, [
+			{
+				op: 'add',
+				key: 'car.model3D.cameras',
+				value: {
+					name: 'interior',
+					position: { x: 0.05, y: 1.9, z: 1.3 },
+					lookAt: { x: 0.05, y: 0.75, z: -0.7 },
+				} as never,
+			},
+			{
+				op: 'add',
+				key: 'car.model3D.lights',
+				value: { name: 'footwell', position: { x: -0.6, y: 0.55, z: -0.85 } } as never,
+			},
+			set('car.model3D.lights[0].brightness', 5),
+		]);
+		expect(source).toContain(
+			"CarModel3DCameraConfig(name: 'interior', position: Offset3D(0.05, 1.9, 1.3), lookAt: Offset3D(0.05, 0.75, -0.7))",
+		);
+		const lights = readConfig(source).values['car.model3D.lights'] as {
+			values: Record<string, unknown>;
+		}[];
+		expect(lights[0]?.values).toEqual({
+			name: 'footwell',
+			position: { x: -0.6, y: 0.55, z: -0.85 },
+			brightness: 5,
+		});
+	});
+
+	test('adds the power and the louder volume to SmartifyOs().init', () => {
+		const { source } = setConfig(main, [
+			set('power.delay', 3000),
+			set('volume.boostedMaxVolume', 2),
+		]);
+		expect(source).toContain('power: const PowerConfig(delay: Duration(seconds: 3)),');
+		expect(source).toContain('volume: const VolumeConfig(boostedMaxVolume: 2),');
+		expect(source).toContain("import 'package:smartify_os_core/power.dart';");
+	});
+
 	test('adds and removes ids, and takes the list out once it is empty', () => {
 		let { source } = setConfig(main, [
 			{ op: 'add', key: 'layouts.hiddenLayouts', value: 'portrait' },

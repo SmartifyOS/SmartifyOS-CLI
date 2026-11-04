@@ -280,10 +280,10 @@ export function setUpMain(source: string, setup: CarSetup): { source: string; ma
  * A new car's `pubspec.yaml`: SmartifyOS from where the CLI gets it, every extension the way
  * the CLI writes one, and the pictures of the car among the assets.
  *
- * The template and the Miata app find SmartifyOS by path inside the SmartifyOS repository,
- * which is no use anywhere else, so it is pointed at the release (or branch) they were
- * copied from. An extension the Miata app names as a git dependency is moved to the
- * overrides, where `extension update` looks for it.
+ * The template and the example app find SmartifyOS by path inside the SmartifyOS
+ * repository, which is no use anywhere else, so it is pointed at the release (or branch) they
+ * were copied from. An extension named as a git dependency is moved to the overrides, where
+ * `extension update` looks for it.
  */
 export function finishAppPubspec(text: string, core: CoreAt, assets: string[] = []): string {
 	let result = withCore(text, core.source, neededOverrides(core.pubspecText));

@@ -60,7 +60,9 @@ const dashboard = SerialDevice(name: 'dashboard', title: "Driver's Arduino", bau
 }
 `;
 		const edited = addSerialToInit(source, 'dashboard') ?? '';
-		expect(edited).toContain('    serial: SerialConfig(devices: [dashboard]),\n  );');
+		expect(edited).toContain(
+			'    serial: const SerialConfig(devices: [dashboard]),\n    extensions: [],\n  );',
+		);
 		expect(addSerialToInit(edited, 'dashboard')).toBeUndefined();
 	});
 
@@ -125,6 +127,8 @@ describe("a board on USB's project", () => {
 			'platform = espressif32@7.1.3\n',
 		);
 		expect(boardId('nano')).toBe('nanoatmega328new');
+		expect(boardId('arduino-mega')).toBe('megaatmega2560');
+		expect(arduinoBoard('megaatmega2560')?.mcu).toBe('atmega2560');
 		expect(arduinoBoard('esp32dev')).toBeUndefined();
 	});
 

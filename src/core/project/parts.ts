@@ -13,6 +13,7 @@ import {
 	closingBracket,
 	codeOnly,
 	declarationAround,
+	elements,
 	keepOnlyCall,
 	onlyMatch,
 	removeArgument,
@@ -168,6 +169,63 @@ export interface PartNames {
 }
 
 /**
+ * A name as lowercase words joined by `_`, digits kept: `Driver's seat` is `drivers_seat`,
+ * `30 seconds` is `30_seconds`. Empty when nothing in it is a letter or a digit.
+ */
+export function snakeName(input: string): string {
+	return (
+		input
+			.normalize('NFD')
+			.replace(/\p{M}/gu, '')
+			// "Driver's seat" is drivers_seat.
+			.replace(/['\u2019]/g, '')
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, '_')
+			.replace(/^_+|_+$/g, '')
+	);
+}
+
+const ones = [
+	'zero',
+	'one',
+	'two',
+	'three',
+	'four',
+	'five',
+	'six',
+	'seven',
+	'eight',
+	'nine',
+	'ten',
+	'eleven',
+	'twelve',
+	'thirteen',
+	'fourteen',
+	'fifteen',
+	'sixteen',
+	'seventeen',
+	'eighteen',
+	'nineteen',
+];
+const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+
+/**
+ * Internal: a whole number in words joined by `_`, `250` is `two_hundred_fifty`. Left as
+ * digits from a million up, which is then refused as a name.
+ */
+function numberWords(number: number): string {
+	if (!Number.isSafeInteger(number) || number >= 1_000_000) return String(number);
+	if (number < 20) return ones[number] ?? String(number);
+	if (number < 100) {
+		const rest = number % 10;
+		return `${tens[Math.floor(number / 10)]}${rest ? `_${ones[rest]}` : ''}`;
+	}
+	const [size, word] = number < 1000 ? [100, 'hundred'] : [1000, 'thousand'];
+	const rest = number % size;
+	return `${numberWords(Math.floor(number / size))}_${word}${rest ? `_${numberWords(rest)}` : ''}`;
+}
+
+/**
  * Every spelling of a part's name, from the name the driver reads.
  *
  * @throws {CliError} when it cannot be a name, saying why.
@@ -179,14 +237,8 @@ export function partNames(input: string): PartNames {
 			hint: 'Keep it short and leave out $ and backslashes, like "Trip computer".',
 		});
 	}
-	const snake = name
-		.normalize('NFD')
-		.replace(/\p{M}/gu, '')
-		// "Driver's seat" is drivers_seat.
-		.replace(/['\u2019]/g, '')
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '_')
-		.replace(/^_+|_+$/g, '');
+	// A class cannot start with a digit, so "0 to 100" is zero_to_100.
+	const snake = snakeName(name).replace(/^(\d+)(?=_|$)/, (number) => numberWords(Number(number)));
 	if (!/^[a-z]/.test(snake)) {
 		throw new CliError(`"${name}" has to start with a letter from A to Z.`, {
 			hint: 'It also names a file and a class in your app, like "Trip computer".',
@@ -760,9 +812,36 @@ export function registerIn(
 	}
 	if (edited === undefined) return undefined;
 	// What goes in is never const, so the list and the config around it cannot be.
-	return edited
-		.replace(new RegExp(`\\bconst\\s+(${config}\\s*\\()`), '$1')
-		.replace(new RegExp(`(\\b${list}\\s*:\\s*)const\\s+\\[`), '$1[');
+	return withoutConst(edited, config, list).replace(
+		new RegExp(`(\\b${list}\\s*:\\s*)const\\s+\\[`),
+		'$1[',
+	);
+}
+
+/**
+ * Internal: takes `const` off the one `config(...)`, and puts it on each of its other
+ * arguments that was const only because of it (`AboutConfig(...)`, a list), so nothing that
+ * was const stops being so.
+ */
+function withoutConst(source: string, config: string, list: string): string {
+	const match = new RegExp(`\\bconst\\s+${config}\\s*\\(`).exec(codeOnly(source));
+	if (!match) return source;
+	const open = match.index + match[0].length - 1;
+	const code = codeOnly(source);
+	const close = closingBracket(code, open);
+	if (close === -1) return source;
+	let result = source;
+	// From the last argument back, so the places before it stay where they are.
+	for (const item of elements(code, open, close).reverse()) {
+		const text = code.slice(item.start, item.end);
+		const named = /^([A-Za-z_]\w*)\s*:\s*/.exec(text);
+		if (named?.[1] === list) continue;
+		const valueAt = item.start + (named?.[0].length ?? 0);
+		if (/^(?:[A-Z][\w.]*\s*(?:<[^>]*>)?\s*\(|<[^>]*>\s*[[{]|[[{])/.test(code.slice(valueAt))) {
+			result = `${result.slice(0, valueAt)}const ${result.slice(valueAt)}`;
+		}
+	}
+	return `${result.slice(0, match.index)}${result.slice(match.index).replace(/^const\s+/, '')}`;
 }
 
 /** Internal: takes `symbol` out of the list its kind is handed to SmartifyOS in. */
