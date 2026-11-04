@@ -109,8 +109,9 @@ export interface NeededOverride {
  * The overrides in SmartifyOS's own pubspec.yaml.
  *
  * An override only applies in the package it is written in, so every app that uses
- * SmartifyOS has to repeat these (today `flutter_angle` and `http`). They are copied as they
- * are written rather than understood, so whatever shape the next one takes, it still works.
+ * SmartifyOS has to repeat these (today there are none, older releases had `flutter_angle`).
+ * They are copied as they are written rather than understood, so whatever shape the next one
+ * takes, it still works.
  */
 export function neededOverrides(corePubspecText: string): NeededOverride[] {
 	return entryNames(corePubspecText, 'dependency_overrides').flatMap((name) => {

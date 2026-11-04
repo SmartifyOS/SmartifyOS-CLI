@@ -7,6 +7,7 @@ import { requireCar } from '../core/project/find.ts';
 import { AppCallError, VmService, vmServiceAddress } from '../core/vm-service.ts';
 import { prepareAndroid } from '../ui/android.ts';
 import { runAttached } from '../ui/attached.ts';
+import { ensureFlutterGpu } from '../ui/flutter-gpu.ts';
 import { takeCalls } from '../ui/json.ts';
 import { intro, log } from '../ui/output.ts';
 import { readCarStep, step } from '../ui/project.ts';
@@ -57,6 +58,8 @@ export const runCommand: Command = {
 				() => `Added the ${platform} part to your car's app`,
 			);
 		}
+		// A car made before SmartifyOS drew the 3D car with Flutter GPU gets it here.
+		await ensureFlutterGpu(app.dir);
 
 		log.info(
 			`Starting it${device ? ` on ${theme.strong(device.name)}` : ''}. Press ${theme.code('r')} to see a change, ${theme.code('q')} to stop.${device ? theme.dim(' The first build for Android can take ten minutes or more.') : ''}`,

@@ -4,6 +4,7 @@ import { addExamplePlatforms } from '../../core/extension/create.ts';
 import { desktopPlatform } from '../../core/flutter.ts';
 import { requireExtension } from '../../core/project/find.ts';
 import { runAttached } from '../../ui/attached.ts';
+import { ensureFlutterGpu } from '../../ui/flutter-gpu.ts';
 import { intro, log } from '../../ui/output.ts';
 import { step } from '../../ui/project.ts';
 import { theme } from '../../ui/theme.ts';
@@ -42,6 +43,7 @@ export const extensionRunCommand: Command = {
 			);
 		}
 
+		await ensureFlutterGpu(example);
 		log.info(`Starting it. Press ${theme.code('r')} to see a change, ${theme.code('q')} to stop.`);
 		const code = await runAttached('flutter', ['run', '-d', platform], example);
 		if (code !== 0) {

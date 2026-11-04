@@ -33,6 +33,7 @@ import { hostArch, type LinuxArch, linuxArchs, officialLinux } from '../../core/
 import { runInTerminal, runStreaming } from '../../core/process.ts';
 import type { CarState } from '../../core/project/car.ts';
 import { requireCar } from '../../core/project/find.ts';
+import { ensureFlutterGpu } from '../../ui/flutter-gpu.ts';
 import { emit, isJsonMode } from '../../ui/json.ts';
 import { describeSets, renderNeedProblems, setData } from '../../ui/linux.ts';
 import { intro, log, outro } from '../../ui/output.ts';
@@ -364,11 +365,15 @@ async function fetchDownloads(choices: DownloadChoice[]): Promise<StickDownload[
 
 /**
  * Internal: the name of the program the build makes. A car's app made without a Linux part
- * gets one, since the car cannot run it otherwise.
+ * gets one, since the car cannot run it otherwise, and one made before SmartifyOS drew the
+ * 3D car with Flutter GPU gets that switched on.
  */
 async function ensureLinux(state: CarState): Promise<string> {
 	const found = await bundleBinaryName(state.app.dir);
-	if (found) return found;
+	if (found) {
+		await ensureFlutterGpu(state.app.dir);
+		return found;
+	}
 
 	const name = /^name:\s*(\S+)/m.exec(state.pubspecText)?.[1] ?? 'app';
 	await step(

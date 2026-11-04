@@ -2,6 +2,7 @@ import { rm } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { type AndroidSync, syncAndroid } from '../android/project.ts';
 import { analyzeErrors, type Problem, packageConfigPath, pubGet, pubUpgrade } from '../flutter.ts';
+import { switchOnFlutterGpu } from '../flutter-gpu.ts';
 import type { ListProblem } from '../linux/lists.ts';
 import { checkPackageLists } from '../package-check.ts';
 import { lastLines } from '../process.ts';
@@ -123,11 +124,13 @@ export async function writeLinks(
  * looked for when there are errors at all, so the usual case costs one analysis, not two.
  *
  * A change that is kept also brings the app's Android part, when it has one, in line with
- * what the packages it runs now need there (src/core/android/project.ts).
+ * what the packages it runs now need there (src/core/android/project.ts), and switches Flutter
+ * GPU on in every platform it has (src/core/flutter-gpu.ts).
  */
 export async function tryChange(app: CarApp, change: Change): Promise<ChangeResult> {
 	const result = await tryChangeOnly(app, change);
 	if (!result.ok) return result;
+	await switchOnFlutterGpu(app.dir);
 	const android = await syncAndroid(app.dir);
 	return android.android ? { ok: true, android } : result;
 }

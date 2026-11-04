@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { CliError } from '../../utils/errors.ts';
+import { compareVersions } from '../../utils/semver.ts';
 import { findAndroidTools, missingAndroidTools } from '../android/tools.ts';
 import { isPlatformioReady, platformioRunsHere, platformioVersion } from '../device/platformio.ts';
 import { pioPath } from '../device/tools.ts';
-import { flutterVersion } from '../flutter.ts';
+import { flutterVersion, minimumFlutter } from '../flutter.ts';
 import { findFlutter, probe } from '../process.ts';
 import { gitInstallHint } from './flutter.ts';
 
@@ -71,6 +72,18 @@ async function checkFlutter(): Promise<Check> {
 	try {
 		const { version, channel } = await flutterVersion();
 		const where = found.own ? ', installed by smartify-os setup' : '';
+		if (compareVersions(version, minimumFlutter) < 0) {
+			return {
+				...base,
+				status: 'error',
+				summary: `${version} on ${channel}${where}, and SmartifyOS needs ${minimumFlutter} or newer`,
+				hint: found.own
+					? 'Run smartify-os setup, which installs the newest one for you.'
+					: 'Run flutter upgrade to get a newer one.',
+				...(found.own ? { fix: ['setup'] } : {}),
+				path: found.path,
+			};
+		}
 		return { ...base, status: 'ok', summary: `${version} on ${channel}${where}`, path: found.path };
 	} catch (error) {
 		return {

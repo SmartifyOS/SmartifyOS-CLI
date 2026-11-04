@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { androidFlutterGpuByHand, androidWithFlutterGpu } from '../flutter-gpu.ts';
 import { type AndroidNeeds, collectAndroidNeeds, requesterNames } from './needs.ts';
 
 /**
@@ -13,6 +14,8 @@ import { type AndroidNeeds, collectAndroidNeeds, requesterNames } from './needs.
  *   of the manifest that is the CLI's, so one no package asks for any more goes again.
  * - The `minSdk` the packages ask for, as `maxOf(flutter.minSdkVersion, N)`, so Flutter's own
  *   is kept when it is higher. One the owner wrote that is high enough stays.
+ * - Flutter GPU switched on in the manifest, which the 3D car is drawn with (see
+ *   `src/core/flutter-gpu.ts`, which does the same for the other platforms).
  *
  * Every file is edited line by line, so anything else in it stays as it was.
  */
@@ -65,7 +68,14 @@ export async function syncAndroid(appDir: string): Promise<AndroidSync> {
 	};
 
 	for (const path of styleFiles) await edit(path, withFullScreenThemes);
-	await edit(manifestFile, (text) => withPermissions(text, needs));
+	await edit(manifestFile, (text) => {
+		const withNeeds = withPermissions(text, needs);
+		const withGpu = androidWithFlutterGpu(withNeeds);
+		if (withGpu === undefined) {
+			manual.push(`${manifestFile}: ${androidFlutterGpuByHand}`);
+		}
+		return withGpu ?? withNeeds;
+	});
 	for (const path of gradleFiles) {
 		await edit(path, (text) => {
 			const result = withMinSdk(text, needs, path.endsWith('.kts') ? 'kotlin' : 'groovy');

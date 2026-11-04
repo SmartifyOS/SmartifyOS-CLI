@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CliError } from '../utils/errors.ts';
+import { switchOnFlutterGpu } from './flutter-gpu.ts';
 import { type ProcessResult, run, runOrThrow } from './process.ts';
 
 /**
@@ -113,8 +114,8 @@ export function packageConfigPath(appDir: string): string {
 const createLeftovers = ['test', 'analysis_options.yaml', 'README.md'];
 
 /**
- * Gives an app the folders for these platforms, and takes back out whatever else
- * `flutter create` put there that was not there before.
+ * Gives an app the folders for these platforms, with Flutter GPU switched on in each, and takes
+ * back out whatever else `flutter create` put there that was not there before.
  */
 export async function addPlatforms(
 	dir: string,
@@ -131,7 +132,15 @@ export async function addPlatforms(
 	for (const name of createLeftovers) {
 		if (!had.has(name)) await rm(join(dir, name), { recursive: true, force: true });
 	}
+	await switchOnFlutterGpu(dir);
 }
+
+/**
+ * The oldest Flutter SmartifyOS builds with: the first stable that can switch Flutter GPU on
+ * in a Linux or Windows release build, which the 3D car is drawn with. Keep it in step with
+ * the lower bound of `flutter:` in core's pubspec.yaml.
+ */
+export const minimumFlutter = '3.47.1';
 
 /** Which Flutter this computer has. */
 export interface FlutterVersion {

@@ -1,8 +1,14 @@
 import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CliError } from '../../utils/errors.ts';
+import { compareVersions } from '../../utils/semver.ts';
 import { flutterDir, ownFlutterPath, toolsDir } from '../device/tools.ts';
-import { desktopPlatform, type FlutterVersion, flutterVersion } from '../flutter.ts';
+import {
+	desktopPlatform,
+	type FlutterVersion,
+	flutterVersion,
+	minimumFlutter,
+} from '../flutter.ts';
 import { findFlutter, runOrThrow } from '../process.ts';
 
 /**
@@ -12,7 +18,9 @@ import { findFlutter, runOrThrow } from '../process.ts';
  * It is the newest stable release, cloned at its tag into `~/.smartify-os/tools/flutter`,
  * the same way `linux.sh flutter` installs it on a car (a shallow clone of a branch has no
  * tag, and a Flutter that cannot tell its own version breaks every SDK constraint). A Flutter
- * the owner has already is never touched, and always wins, see `findFlutter`.
+ * the owner has already is never touched, and always wins, see `findFlutter`: one older than
+ * SmartifyOS needs is for `doctor` to point out. The one installed here is replaced by the
+ * newest once it is older than that.
  */
 
 const flutterRepo = 'https://github.com/flutter/flutter.git';
@@ -80,9 +88,11 @@ export async function setUpFlutter(
 		}
 	}
 
-	// The one SmartifyOS installed is put right by installing it again when it does not run,
-	// and prepared again below when it does, which is quick once nothing is missing.
-	const current = found ? await flutterVersion().catch(() => undefined) : undefined;
+	// The one SmartifyOS installed is put right by installing it again when it does not run or
+	// is too old, and prepared again below when it does, which is quick once nothing is missing.
+	const working = found ? await flutterVersion().catch(() => undefined) : undefined;
+	const current =
+		working && compareVersions(working.version, minimumFlutter) >= 0 ? working : undefined;
 	const installed = current === undefined;
 	const version = current?.version ?? (await downloadFlutter(onStep));
 

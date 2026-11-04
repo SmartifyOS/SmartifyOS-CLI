@@ -415,7 +415,11 @@ const schema: SchemaField[] = [
 					],
 				},
 				section('render', 'CarModel3DRenderConfig', [core('car')], 'How it is drawn', [
-					number('scale', 1.5, 'How many pixels it is drawn with, next to the screen'),
+					number(
+						'scale',
+						1,
+						'How many pixels it is drawn with, next to the screen (0.25 to 2, below 1 is cheaper)',
+					),
 					number('exposure', 1.15, 'How bright it is'),
 					number('environmentIntensity', 0.55, 'How strongly it reflects the studio'),
 					integer('shadowMapSize', 2048, 'How finely the shadow is drawn, in pixels'),
