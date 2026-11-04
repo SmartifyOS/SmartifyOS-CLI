@@ -79,7 +79,9 @@ export const systemRequester: Requester = { name: 'smartify-os-system', title: '
  * - labwc shows SmartifyOS full screen, and every app it starts.
  * - libpam-systemd and dbus-user-session give it a login session without a login screen,
  *   which is what lets it use the screen, touch and sound, and have a session bus.
- * - pipewire-audio plays sound, Bluetooth audio included.
+ * - pipewire-audio plays sound, Bluetooth audio included. libpipewire-0.3-modules and
+ *   libspa-0.2-modules hold the echo canceller `linux.sh system` turns on for the microphone,
+ *   named on their own since nothing promises pipewire-audio keeps pulling them in.
  * - sudo and polkitd let it install updates and open USB sticks without a password.
  * - gsettings-desktop-schemas is where GTK reads which cursor to draw, which is none.
  *
@@ -91,6 +93,8 @@ export const carSystem: readonly string[] = [
 	'gsettings-desktop-schemas',
 	'labwc',
 	'libpam-systemd',
+	'libpipewire-0.3-modules',
+	'libspa-0.2-modules',
 	'pipewire-audio',
 	'polkitd',
 	'sudo',

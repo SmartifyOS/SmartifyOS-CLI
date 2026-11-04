@@ -21,7 +21,8 @@
 #       Builds the car's app for Linux, and prints the folder of the finished build.
 #   linux.sh system
 #       Sets the car up to start straight into SmartifyOS, as the user in
-#       /etc/smartify-os/car.conf: its service, passwordless sudo, its groups, a quiet start.
+#       /etc/smartify-os/car.conf: its service, passwordless sudo, its groups, echo
+#       cancellation for the microphone, a quiet start.
 #   linux.sh downloads <folder> [--user NAME]
 #       Puts what the car's extensions download in place, from a folder smartify-os wrote
 #       (its downloads.list names each), into ~/.local/share/smartify-os. One already there
@@ -781,6 +782,67 @@ system_groups() {
 	done
 }
 
+# The car plays a call through its speakers and listens with a microphone in the same cabin,
+# so without this the other end of every call hears itself a moment late, and the voice
+# assistant hears the car's own sound. This puts an echo cancelled microphone in front of the
+# real one and makes it the default, which the Bluetooth call uplink, Android Auto's
+# microphone and the voice assistant all follow without being told. It cancels against
+# whatever the speakers play, and names no device, so it works in every car. For every user,
+# since PipeWire reads /etc as well as each user's own folder, and read when PipeWire next
+# starts, which on a new car is the restart after install.sh.
+#
+# From FlutterAndroidAuto's tools/config/60-headunit-echo-cancel.conf, node names included,
+# so its docs/echo-cancellation.md (how to measure it, how to tune it) applies as it is.
+system_echo_cancel() {
+	put_file /etc/pipewire/pipewire.conf.d/60-smartify-os-echo-cancel.conf 0644 <<'EOF'
+# Written by the SmartifyOS installer, and again every time it runs, so a change made here
+# does not last.
+#
+# Echo cancellation for the car's microphone. A phone stops cancelling echo as soon as a
+# call goes to a Bluetooth hands free unit, since only the car knows what its speakers
+# played, so the car has to do it. The raw microphone is still there, and can be picked
+# by name, for hardware that already cancels echo itself.
+
+context.modules = [
+  { name = libpipewire-module-echo-cancel
+    args = {
+      # Cancel whatever the speakers play (the call, navigation, music), not one app.
+      monitor.mode = true
+
+      library.name = aec/libspa-aec-webrtc
+
+      aec.args = {
+        # Engine and road rumble.
+        webrtc.high_pass_filter = true
+        # The driver is never at a fixed distance from the microphone.
+        webrtc.gain_control = true
+        webrtc.noise_suppression = true
+        # Indicator ticks and door slams.
+        webrtc.transient_suppression = true
+        # Off, since a gate that guesses wrong clips the start of a word.
+        webrtc.voice_detection = false
+        # A lighter canceller for weak hardware, which lets more echo through.
+        webrtc.mobile_mode = false
+      }
+
+      capture.props = {
+        node.name    = "headunit_aec_capture"
+        node.passive = true
+      }
+
+      source.props = {
+        # Ranks above every real microphone, so this is the default one.
+        node.name        = "headunit_aec_source"
+        node.description = "Car microphone (echo cancelled)"
+        priority.session = 3000
+        priority.driver  = 3000
+      }
+    }
+  }
+]
+EOF
+}
+
 # The login session the service opens on tty1, the way a login screen would, which is what
 # gives SmartifyOS the screen, touch and sound, and its language from /etc/default/locale.
 system_pam() {
@@ -1106,6 +1168,8 @@ cmd_system() {
 	system_polkit "$user"
 	step 'Letting SmartifyOS use the reverse camera'
 	system_groups "$user"
+	step 'Cancelling the echo of the speakers in the microphone, for calls and the voice assistant'
+	system_echo_cancel
 	step 'Starting SmartifyOS with the car, full screen and without a cursor'
 	system_pam
 	system_labwc
@@ -1166,7 +1230,7 @@ cmd_downloads() {
 # -- Entry --------------------------------------------------------------------------------
 
 usage() {
-	sed -n '3,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+	sed -n '3,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
 }
 
 main() {

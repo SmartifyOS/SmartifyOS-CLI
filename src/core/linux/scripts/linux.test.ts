@@ -394,6 +394,22 @@ describe('linux.sh system', () => {
 		expect(log).toContain(`usermod --root ${sysroot} -aG video pi`);
 	});
 
+	test('makes an echo cancelled microphone the default, for calls and the voice assistant', async () => {
+		await car();
+		expect(setUpSystem().code).toBe(0);
+		const conf = await file('etc/pipewire/pipewire.conf.d/60-smartify-os-echo-cancel.conf');
+		expect(conf).toContain('name = libpipewire-module-echo-cancel');
+		expect(conf).toContain('library.name = aec/libspa-aec-webrtc');
+		expect(conf).toContain('monitor.mode = true');
+		expect(conf).toContain('priority.session = 3000');
+		const mode = Bun.spawnSync([
+			'ls',
+			'-l',
+			join(sysroot, 'etc/pipewire/pipewire.conf.d/60-smartify-os-echo-cancel.conf'),
+		]);
+		expect(mode.stdout.toString()).toStartWith('-rw-r--r--');
+	});
+
 	test('leaves the sudo rule out when visudo finds it broken, since that would break sudo', async () => {
 		await car();
 		const { code, stderr } = setUpSystem({ FAKE_VISUDO: '1' });
