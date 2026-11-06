@@ -175,36 +175,52 @@ function pubspecField(pubspecText: string, key: string): string | undefined {
 	return new RegExp(`^${key}:\\s*(\\S+)`, 'm').exec(pubspecText)?.[1];
 }
 
+/**
+ * How an installer is run on the car, the same words in README.txt and in what `export
+ * installer` says when it is done, with each command passed through `code`.
+ */
+export function installSteps(
+	buildOn: BuildOn,
+	code: (command: string) => string = (c) => c,
+): string[] {
+	return [
+		`1. Install ${officialLinux.name} on the car (${officialLinux.piName} on a Raspberry Pi),`,
+		'   connected to the internet, and log in on it as the user SmartifyOS should run as.',
+		'2. Plug the stick in. The car only shows the text screen you logged in on, and nothing',
+		'   there opens the stick by itself, so type this to open it (lsblk lists the drives,',
+		'   if the stick is not sda1):',
+		'',
+		`     ${code('sudo mount /dev/sda1 /mnt')}`,
+		'',
+		`   Debian installed with a root password has no sudo. Type ${code('su -c "mount /dev/sda1 /mnt"')}`,
+		'   there instead, and the root password.',
+		'3. Then type this:',
+		'',
+		`     ${code(`bash /mnt/${exportFolderName}/install.sh`)}`,
+		'',
+		'It asks for your password once and restarts straight into SmartifyOS when it is done.',
+		buildOn === 'car'
+			? 'The car needs the internet while it installs, to download what SmartifyOS needs from'
+			: 'The car needs the internet while it installs, even though SmartifyOS was built already:',
+		buildOn === 'car'
+			? 'Linux and the Flutter it builds SmartifyOS with. Building takes a while the first time.'
+			: 'it downloads what SmartifyOS needs from Linux.',
+		'Updates later only need it when there is something new to download for them.',
+	];
+}
+
 /** README.txt, for whoever finds the stick. */
 export function renderReadme(input: ExportInput): string {
 	const lines =
 		input.kind === 'installer'
-			? [
-					'SmartifyOS installer',
-					'',
-					`1. Install ${officialLinux.name} on the car (${officialLinux.piName} on a Raspberry Pi),`,
-					'   and log in on it as the user SmartifyOS should run as.',
-					'2. Plug this USB stick in. With no desktop on the car, nothing opens it by itself,',
-					'   so open it with this (lsblk lists the drives, if the stick is not sda1):',
-					'',
-					'     sudo mount /dev/sda1 /mnt',
-					'',
-					'   Debian installed with a root password has no sudo. Type su -c "mount /dev/sda1 /mnt"',
-					'   there instead, and the root password.',
-					'3. Run this:',
-					'',
-					`     bash /mnt/${exportFolderName}/install.sh`,
-					'',
-					'It asks for your password once. The car needs the internet while it installs, and',
-					'restarts straight into SmartifyOS when it is done.',
-					...(input.buildOn === 'car'
-						? ['SmartifyOS is built on the car, which takes a while the first time.']
-						: []),
-				]
+			? ['SmartifyOS installer', '', ...installSteps(input.buildOn)]
 			: [
 					'SmartifyOS update',
 					'',
 					'Plug this USB stick into the car while SmartifyOS runs, and it offers the update.',
+					input.buildOn === 'car'
+						? 'The car builds it, and needs the internet only for what is new to download (a newer Flutter, or packages it did not have).'
+						: 'The car needs the internet for it only when it needs something new installed.',
 				];
 	return [...lines, '', `Made by smartify-os ${cliVersion}.`, ''].join('\n');
 }

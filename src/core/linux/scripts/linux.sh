@@ -870,7 +870,10 @@ system_labwc() {
 <labwc_config>
   <windowRules>
     <!-- No frame around any window, and every main window full screen, which also hides
-         the title bar GTK draws itself. -->
+         the title bar GTK draws itself. This toggles, so a window that asked to be full
+         screen already would end up windowed: SmartifyOS never asks on a car (it looks
+         for /etc/smartify-os/car.conf). A window that is not full screen also gets every
+         touch drag wrong in labwc 0.8 (labwc#3764). -->
     <windowRule identifier="*" serverDecoration="no" />
     <windowRule type="normal">
       <action name="ToggleFullscreen" />

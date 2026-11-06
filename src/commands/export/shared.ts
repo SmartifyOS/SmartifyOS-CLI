@@ -21,8 +21,8 @@ import {
 	type BuildOn,
 	type Built,
 	type ExportKind,
-	exportFolderName,
 	exportSets,
+	installSteps,
 	readExistingExport,
 	type StickDownload,
 	writeExport,
@@ -108,7 +108,7 @@ export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportD
 	const state = await readCarStep(app);
 
 	const binary = await ensureLinux(state);
-	const { buildOn, found } = await pickBuildOn(flags['build-on'], await findBuilder());
+	const { buildOn, found } = await pickBuildOn(kind, flags['build-on'], await findBuilder());
 	const builder = buildOn === 'computer' && found.ok ? found.builder : undefined;
 	const arch = builder ? await pickArch(flags.arch, builder) : undefined;
 
@@ -191,23 +191,12 @@ export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportD
 	}
 
 	if (kind === 'installer') {
-		note(
-			[
-				`1. Install ${officialLinux.name} on the car (${officialLinux.piName} on a Raspberry Pi), and log in as the user SmartifyOS runs as.`,
-				'2. Plug the stick in and open a terminal.',
-				`3. Run ${theme.code(`bash /media/<you>/<stick>/${exportFolderName}/install.sh`)}`,
-				'',
-				theme.dim(
-					`It asks for the password once, and needs the internet.${buildOn === 'car' ? ' Building on the car takes a while the first time.' : ''}`,
-				),
-			].join('\n'),
-			'On the car',
-		);
+		note(installSteps(buildOn, theme.code).join('\n'), 'On the car');
 	}
 	outro(
 		kind === 'installer'
 			? 'All done. README.txt on the stick says the same.'
-			: 'All done. Plug it into the car while SmartifyOS runs, and it offers the update.',
+			: `All done. Plug it into the car while SmartifyOS runs, and it offers the update. ${theme.dim(buildOn === 'car' ? 'The car needs the internet for it only to download what is new (a newer Flutter, or packages it did not have).' : 'The car needs the internet for it only when it needs something new installed.')}`,
 	);
 
 	return data(true, {
@@ -283,7 +272,7 @@ async function pickDownloads(
 		if (await isCached(choice.list, choice.item)) cached.add(choice.key);
 	}
 	const keys = await multiselect<string>({
-		message: `What should go on the car with it? ${several ? 'Your extensions download' : `${found.lists[0]?.requester.title} downloads`} these by itself, but a car often has no internet.`,
+		message: `What should go on the car with it? ${several ? 'Your extensions download' : `${found.lists[0]?.requester.title} downloads`} these by itself while it runs, but a car on the road often has no internet.`,
 		options: optional.map((choice) => ({
 			value: choice.key,
 			label: several ? `${choice.list.requester.title}: ${choice.item.title}` : choice.item.title,
@@ -391,6 +380,7 @@ async function ensureLinux(state: CarState): Promise<string> {
  * Docker Desktop and picking it again is enough: picking it looks for Docker again.
  */
 async function pickBuildOn(
+	kind: ExportKind,
 	given: Flags[string],
 	found: FindBuilder,
 ): Promise<{ buildOn: BuildOn; found: FindBuilder }> {
@@ -416,7 +406,10 @@ async function pickBuildOn(
 
 	while (true) {
 		const buildOn = await select<BuildOn>({
-			message: 'Where should SmartifyOS be built?',
+			message:
+				kind === 'installer'
+					? 'Where should SmartifyOS be built? Either way, the car needs the internet while it installs.'
+					: 'Where should SmartifyOS be built?',
 			options: [
 				{
 					value: 'computer',
@@ -424,13 +417,16 @@ async function pickBuildOn(
 					hint: !found.ok
 						? found.option
 						: found.builder.kind === 'container'
-							? 'in Docker, the car only installs the finished app'
-							: `for ${found.builder.arch} cars, the car only installs the finished app`,
+							? 'in Docker, quicker, the car only installs the finished app'
+							: `for ${found.builder.arch} cars, quicker, the car only installs the finished app`,
 				},
 				{
 					value: 'car',
 					label: 'On the car',
-					hint: 'it needs the internet and takes a while there',
+					hint:
+						kind === 'installer'
+							? 'the car also downloads Flutter, and building takes a while there'
+							: 'needs the internet on the car when Flutter or the packages changed',
 				},
 			],
 			...(found.ok ? {} : { initialValue: 'car' as const }),
