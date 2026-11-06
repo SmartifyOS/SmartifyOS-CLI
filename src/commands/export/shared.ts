@@ -108,8 +108,7 @@ export async function runExport(kind: ExportKind, flags: Flags): Promise<ExportD
 	const state = await readCarStep(app);
 
 	const binary = await ensureLinux(state);
-	const found = await findBuilder();
-	const buildOn = await pickBuildOn(flags['build-on'], found);
+	const { buildOn, found } = await pickBuildOn(flags['build-on'], await findBuilder());
 	const builder = buildOn === 'computer' && found.ok ? found.builder : undefined;
 	const arch = builder ? await pickArch(flags.arch, builder) : undefined;
 
@@ -384,8 +383,17 @@ async function ensureLinux(state: CarState): Promise<string> {
 	return (await bundleBinaryName(state.app.dir)) ?? name;
 }
 
-/** Internal: where it is built, from the flag or by asking when this computer can do it. */
-async function pickBuildOn(given: Flags[string], found: FindBuilder): Promise<BuildOn> {
+/**
+ * Internal: where it is built, from the flag or by asking, and how this computer builds when
+ * that is here.
+ *
+ * Asked even when this computer cannot build right now, saying why next to it, so starting
+ * Docker Desktop and picking it again is enough: picking it looks for Docker again.
+ */
+async function pickBuildOn(
+	given: Flags[string],
+	found: FindBuilder,
+): Promise<{ buildOn: BuildOn; found: FindBuilder }> {
 	if (given !== undefined) {
 		if (given !== 'car' && given !== 'computer') {
 			throw new CliError(`--build-on is car or computer, not ${String(given)}.`, {
@@ -397,32 +405,48 @@ async function pickBuildOn(given: Flags[string], found: FindBuilder): Promise<Bu
 				hint: `${found.hint} Or pass ${theme.code('--build-on car')}, and the car builds it for itself.`,
 			});
 		}
-		return given;
+		return { buildOn: given, found };
 	}
 
-	if (!found.ok) {
+	// Nobody to ask, so the car builds it, as it is the one that always can.
+	if (!found.ok && !isInteractive()) {
 		log.info(`SmartifyOS is built on the car. ${theme.dim(`${found.reason} ${found.hint}`)}`);
-		return 'car';
+		return { buildOn: 'car', found };
 	}
 
-	return await select<BuildOn>({
-		message: 'Where should SmartifyOS be built?',
-		options: [
-			{
-				value: 'computer',
-				label: 'On this computer',
-				hint:
-					found.builder.kind === 'container'
-						? 'in Docker, the car only installs the finished app'
-						: `for ${found.builder.arch} cars, the car only installs the finished app`,
-			},
-			{
-				value: 'car',
-				label: 'On the car',
-				hint: 'it needs the internet and takes a while there',
-			},
-		],
-	});
+	while (true) {
+		const buildOn = await select<BuildOn>({
+			message: 'Where should SmartifyOS be built?',
+			options: [
+				{
+					value: 'computer',
+					label: 'On this computer',
+					hint: !found.ok
+						? found.option
+						: found.builder.kind === 'container'
+							? 'in Docker, the car only installs the finished app'
+							: `for ${found.builder.arch} cars, the car only installs the finished app`,
+				},
+				{
+					value: 'car',
+					label: 'On the car',
+					hint: 'it needs the internet and takes a while there',
+				},
+			],
+			...(found.ok ? {} : { initialValue: 'car' as const }),
+		});
+		if (buildOn === 'car' || found.ok) return { buildOn, found };
+
+		// Not a step, which would show a check mark when Docker is still not there.
+		const looking = spinner();
+		looking.start('Looking for Docker');
+		found = await findBuilder();
+		if (found.ok) {
+			looking.stop('Docker is running');
+			return { buildOn, found };
+		}
+		looking.error(found.reason);
+	}
 }
 
 /**

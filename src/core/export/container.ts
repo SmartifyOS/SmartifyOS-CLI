@@ -27,7 +27,15 @@ import { packSource } from './pack.ts';
 /** Docker, or Podman, which takes the same commands. */
 export type Engine = 'docker' | 'podman';
 
-export type FindEngine = { ok: true; engine: Engine } | { ok: false; reason: string; hint: string };
+export type FindEngine =
+	| { ok: true; engine: Engine }
+	| {
+			ok: false;
+			reason: string;
+			hint: string;
+			/** What to do about it, said next to "On this computer" when asked where to build. */
+			option: string;
+	  };
 
 /** The container engine to build with: one that is installed and running. */
 export async function findEngine(): Promise<FindEngine> {
@@ -44,12 +52,15 @@ export async function findEngine(): Promise<FindEngine> {
 			ok: false,
 			reason: `${name} is installed, but not running, so this computer cannot build for a car right now.`,
 			hint: `Start ${installed === 'docker' ? 'Docker Desktop' : 'Podman'}, then run this again.`,
+			option: `${installed === 'docker' ? 'Docker Desktop' : 'Podman'} is not running yet. Start it, then pick this`,
 		};
 	}
 	return {
 		ok: false,
 		reason: 'Building for a car on this computer needs Docker, which is not installed.',
 		hint: 'Install Docker Desktop from https://docs.docker.com/get-docker/ and start it, then run this again.',
+		option:
+			'Needs Docker Desktop, from https://docs.docker.com/get-docker/. Install and start it, then pick this',
 	};
 }
 

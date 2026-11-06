@@ -15,7 +15,7 @@ export type Builder = { kind: 'container'; engine: Engine } | { kind: 'native'; 
 
 export type FindBuilder =
 	| { ok: true; builder: Builder }
-	| { ok: false; reason: string; hint: string };
+	| { ok: false; reason: string; hint: string; option: string };
 
 /**
  * How this computer can build for a car: in a container when Docker runs, since that leaves
