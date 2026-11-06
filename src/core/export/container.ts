@@ -1,10 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CliError } from '../../utils/errors.ts';
+import { CancelledError, CliError } from '../../utils/errors.ts';
 import type { FlutterVersion } from '../flutter.ts';
 import type { AptNeed, CarNeeds } from '../linux/collect.ts';
-import { type LinuxArch, officialLinux } from '../linux/distro.ts';
+import { hostArch, type LinuxArch, officialLinux } from '../linux/distro.ts';
 import { lastLines, type ProcessResult, run } from '../process.ts';
 import type { CarState } from '../project/car.ts';
 import { type BuildTools, parseLibraries, writeBuildTools } from './build.ts';
@@ -107,7 +107,15 @@ rm -rf ${incoming} ${work}/source.tar.gz
 }
 
 /** A step of a build in the container, for a spinner. */
-export type ContainerStep = 'container' | 'packages' | 'flutter' | 'copy' | 'build' | 'libraries';
+export type ContainerStep =
+	| 'container'
+	| 'packages'
+	| 'flutter'
+	| 'copy'
+	| 'build'
+	/** The emulated build got stuck and is started again, see {@link findStuck}. */
+	| 'rebuild'
+	| 'libraries';
 
 export interface ContainerBuild {
 	/** The finished build, copied out to a temporary folder on this computer. */
@@ -142,6 +150,7 @@ export async function buildInContainer(options: {
 	const out = await mkdtemp(join(tmpdir(), 'smartify-os-bundle-'));
 	const remove = () => rm(out, { recursive: true, force: true });
 
+	const stopped = stopWhenCancelled(engine, name);
 	try {
 		onStep?.('container');
 		await startContainer(engine, name, arch);
@@ -153,10 +162,43 @@ export async function buildInContainer(options: {
 		}
 	} catch (error) {
 		await remove();
-		throw error;
+		throw stopped.cancelled ? new CancelledError() : error;
 	} finally {
+		stopped.dispose();
 		await tools.remove();
 	}
+}
+
+/**
+ * Internal: stops the container when the CLI is stopped while it builds (Ctrl+C, or Cancel
+ * in the editor). Stopping `docker exec` leaves what it started running inside, so the build
+ * would go on with nobody waiting for it. Stopping the container makes the step that runs
+ * fail, which is then reported as cancelled.
+ */
+function stopWhenCancelled(
+	engine: Engine,
+	name: string,
+): { readonly cancelled: boolean; dispose(): void } {
+	let cancelled = false;
+	const stop = () => {
+		if (cancelled) return;
+		cancelled = true;
+		Bun.spawnSync([engine, 'stop', '--time', '1', name], { stdout: 'ignore', stderr: 'ignore' });
+		// Whatever was waiting on the container has ended by now. Should anything still hang,
+		// the CLI goes anyway.
+		setTimeout(() => process.exit(130), 15_000).unref();
+	};
+	process.on('SIGINT', stop);
+	process.on('SIGTERM', stop);
+	return {
+		get cancelled() {
+			return cancelled;
+		},
+		dispose() {
+			process.off('SIGINT', stop);
+			process.off('SIGTERM', stop);
+		},
+	};
 }
 
 async function buildIn(context: {
@@ -205,10 +247,16 @@ async function buildIn(context: {
 	);
 
 	onStep?.('build');
-	const built = await must(
-		linuxSh(['build', paths.app, '--flutter', paths.flutter, '--user', user]),
-		'SmartifyOS did not build.',
-		40,
+	const build = () => linuxSh(['build', paths.app, '--flutter', paths.flutter, '--user', user]);
+	let result = await watched(build, context);
+	for (let again = 0; result.stuck && again < 2; again++) {
+		onStep?.('rebuild');
+		result = await watched(build, context);
+	}
+	const built = await must(Promise.resolve(result), 'SmartifyOS did not build.', 40, (output) =>
+		context.arch === hostArch()
+			? afterPub(output)
+			: `${afterPub(output)}\n\nBuilding for ${context.arch} cars runs emulated on this computer, which now and then fails for reasons that have nothing to do with your app. Try once more, or pick On the car when asked where to build.`,
 	);
 	const bundle = built.stdout.trim().split('\n').pop() ?? '';
 
@@ -227,6 +275,99 @@ async function buildIn(context: {
 		...parseLibraries(libraries),
 		remove: () => rm(out, { recursive: true, force: true }),
 	};
+}
+
+/**
+ * Internal: runs the build, and when it is emulated, looks into the container every so often
+ * for a program stuck waiting on one it started that has long ended (a zombie left unreaped).
+ * That happens now and then to CMake under Rosetta, which then waits forever: the end of its
+ * child never reaches it. The stuck program is killed, which fails the build with `stuck` set,
+ * so it can be started again. The build folder stays, so that goes on where it stopped.
+ */
+async function watched(
+	build: () => Promise<ProcessResult>,
+	context: { inside: (args: string[]) => Promise<ProcessResult>; arch: LinuxArch },
+): Promise<ProcessResult & { stuck: boolean }> {
+	const { inside, arch } = context;
+	const zombies = new Zombies();
+	let stuck = false;
+	let looking = false;
+	const timer =
+		arch === hostArch()
+			? undefined
+			: setInterval(async () => {
+					if (looking || stuck) return;
+					looking = true;
+					try {
+						const ps = await inside(['ps', '-eo', 'pid=,ppid=,stat=']);
+						const waiting = ps.code === 0 ? zombies.see(ps.stdout, Date.now()) : undefined;
+						if (waiting !== undefined) {
+							stuck = true;
+							await inside(['kill', '-9', String(waiting)]);
+						}
+					} finally {
+						looking = false;
+					}
+				}, 15_000);
+	try {
+		const result = await build();
+		// The Dart runtime gives up when emulation interrupts a call it expects not to be, which
+		// is as much luck as the CMake hang, and a build started again usually gets through.
+		const crashed =
+			timer !== undefined && /Unexpected EINTR errno/.test(result.stdout + result.stderr);
+		return { ...result, stuck: (stuck || crashed) && result.code !== 0 };
+	} finally {
+		if (timer) clearInterval(timer);
+	}
+}
+
+/**
+ * Internal: the zombies in the container, and since when each has been one. A process that
+ * just ended is a zombie only until its parent notices, a moment, so one that is still there
+ * a minute later has a parent that is stuck. How old the process is says nothing about that,
+ * a compiler that ran for minutes is just as briefly a zombie.
+ */
+export class Zombies {
+	private readonly since = new Map<string, number>();
+
+	constructor(private readonly minMs = 60_000) {}
+
+	/**
+	 * Takes `ps -eo pid=,ppid=,stat=` at `now`, and returns the parent of a zombie that has
+	 * been one since at least a minute ago. Init (pid 1) reaps by itself, and is left out.
+	 */
+	see(ps: string, now: number): number | undefined {
+		const processes = ps
+			.trim()
+			.split('\n')
+			.map((line) => line.trim().split(/\s+/))
+			.map(([pid, ppid, stat]) => ({ pid, ppid: Number(ppid), stat: stat ?? '' }));
+		const alive = new Set(
+			processes.filter((p) => !p.stat.startsWith('Z')).map((p) => Number(p.pid)),
+		);
+		const zombies = processes.filter(
+			(p) => p.stat.startsWith('Z') && p.ppid > 1 && alive.has(p.ppid),
+		);
+
+		const current = new Set(zombies.map((p) => `${p.pid}:${p.ppid}`));
+		for (const key of this.since.keys()) if (!current.has(key)) this.since.delete(key);
+		for (const key of current) if (!this.since.has(key)) this.since.set(key, now);
+
+		const stuck = zombies.find(
+			(p) => now - (this.since.get(`${p.pid}:${p.ppid}`) ?? now) >= this.minMs,
+		);
+		return stuck?.ppid;
+	}
+}
+
+/**
+ * Internal: what a failed `flutter build` printed from where it started building. Before
+ * that comes fetching the packages, which lists every one of them with its newer versions,
+ * and would push why it failed out of the lines that are shown.
+ */
+export function afterPub(output: string): string {
+	const start = output.lastIndexOf('Building Linux application');
+	return start === -1 ? output : output.slice(start);
 }
 
 /**
@@ -287,10 +428,11 @@ async function must(
 	running: Promise<ProcessResult>,
 	message: string,
 	lines = 20,
+	shown: (output: string) => string = (output) => output,
 ): Promise<ProcessResult> {
 	const result = await running;
 	if (result.code === 0) return result;
-	const output = `${result.stdout}\n${result.stderr}`;
+	const output = shown(`${result.stdout}\n${result.stderr}`);
 	const hint = /exec format error/i.test(output)
 		? 'This computer cannot run programs for that architecture. Docker Desktop can, on Linux install qemu-user-static and binfmt-support.'
 		: lastLines(output, lines);

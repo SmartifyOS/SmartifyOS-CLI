@@ -530,6 +530,7 @@ const containerStepText: Record<ContainerStep, string> = {
 	flutter: 'Installing Flutter in it (only the first time, it takes a while)',
 	copy: "Copying your car's app in",
 	build: 'Building SmartifyOS (a few minutes the first time)',
+	rebuild: 'Building SmartifyOS again, the emulated build got stuck (it happens now and then)',
 	libraries: 'Reading which libraries the build links against',
 };
 
