@@ -422,7 +422,7 @@ const schema: SchemaField[] = [
 					),
 					number('exposure', 1.15, 'How bright it is'),
 					number('environmentIntensity', 0.55, 'How strongly it reflects the studio'),
-					integer('shadowMapSize', 2048, 'How finely the shadow is drawn, in pixels'),
+					integer('shadowMapSize', 512, 'How finely the shadow under the car is drawn, in pixels'),
 					bool('vignette', true, 'Darken the corners a little'),
 				]),
 			]),
