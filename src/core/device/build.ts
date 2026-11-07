@@ -264,7 +264,8 @@ function noRoomForUpdates(device: DeviceProject, why: string): CliError {
  * project's own `boards` folder, then the installed platforms), or else from the boards
  * SmartifyOS knows.
  *
- * @throws {CliError} for a board that is no ESP32 with CAN.
+ * @throws {CliError} for a device on the CAN bus whose board is no ESP32 with CAN. A board on
+ * USB can be any chip.
  */
 async function chipOf(device: DeviceProject): Promise<string | undefined> {
 	const board = device.board;
@@ -291,7 +292,8 @@ async function chipOf(device: DeviceProject): Promise<string | undefined> {
 	}
 	chip ??= chipOfBoard(board);
 
-	if (chip && (!chip.startsWith('esp32') || chip === 'esp32c2')) {
+	const overBus = !isUsbDevice(device);
+	if (overBus && chip && (!chip.startsWith('esp32') || chip === 'esp32c2')) {
 		throw new CliError(`The board ${board} has a ${chip}, which has no CAN.`, {
 			hint: 'Use an ESP32, an ESP32-S3 or an ESP32-C3. Not the ESP32-C2.',
 		});
