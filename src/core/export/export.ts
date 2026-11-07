@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
-import { chmod, copyFile, mkdir, rename, rm } from 'node:fs/promises';
+import { chmod, copyFile, mkdir, rename } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { CliError } from '../../utils/errors.ts';
+import { removeTree } from '../../utils/remove-tree.ts';
 import { version as cliVersion } from '../../utils/version.ts';
 import { filesIn } from '../downloads/fetch.ts';
 import type { FlutterVersion } from '../flutter.ts';
@@ -230,7 +232,8 @@ export function renderReadme(input: ExportInput): string {
  *
  * Everything is written next to it first and only swapped in once complete, so a stick
  * pulled out halfway, or a build that fails, never leaves half an export behind, and an
- * export that was there before stays until the new one is whole.
+ * export that was there before stays until the new one is whole. The `devices` folder of
+ * one that was there before is kept, and never lost to an export that fails.
  */
 export async function writeExport(
 	input: ExportInput,
@@ -239,7 +242,9 @@ export async function writeExport(
 ): Promise<ExportResult> {
 	const folder = join(target, exportFolderName);
 	const staging = join(target, `.${exportFolderName}-new`);
-	await rm(staging, { recursive: true, force: true });
+	// An export that failed before this one may have left the devices' firmware in its staging.
+	await moveDevices(staging, folder);
+	await removeTree(staging);
 	await mkdir(staging, { recursive: true });
 	const files: string[] = [];
 	const write = async (path: string, text: string, executable = false) => {
@@ -297,15 +302,33 @@ export async function writeExport(
 		await write(checksumsName, await renderChecksums(staging, files));
 
 		// The devices' firmware is not the export's, and an update made after it keeps it.
-		const devices = join(folder, devicesOnStick);
-		if (existsSync(devices)) await rename(devices, join(staging, devicesOnStick));
-		await rm(folder, { recursive: true, force: true });
-		await rename(staging, folder);
+		await moveDevices(folder, staging);
+		try {
+			await removeTree(folder);
+			await rename(staging, folder);
+		} catch (error) {
+			throw new CliError(`Could not replace the ${exportFolderName} folder on the stick.`, {
+				hint: `Delete the ${exportFolderName} folder on the stick yourself, then export again.`,
+				cause: error,
+			});
+		}
 		return { folder, files: files.sort(), sets };
 	} catch (error) {
-		await rm(staging, { recursive: true, force: true }).catch(() => {});
+		await moveDevices(staging, folder).catch(() => {});
+		await removeTree(staging).catch(() => {});
 		throw error;
 	}
+}
+
+/**
+ * Internal: moves the `devices` folder (the firmware `smartify-os device export` wrote) from
+ * one export folder to another, unless the other has one already or there is none to move.
+ */
+async function moveDevices(from: string, to: string): Promise<void> {
+	const devices = join(from, devicesOnStick);
+	if (!existsSync(devices) || existsSync(join(to, devicesOnStick))) return;
+	await mkdir(to, { recursive: true });
+	await rename(devices, join(to, devicesOnStick));
 }
 
 /**

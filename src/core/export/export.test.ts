@@ -189,6 +189,17 @@ describe('writeExport', () => {
 		expect(result.files.some((file) => file.startsWith('devices/'))).toBe(false);
 	});
 
+	test('gets back the firmware an export that failed left in its staging', async () => {
+		const stick = join(dir, 'stick-failed');
+		await Bun.write(join(stick, '.smartify-os-new', 'devices', 'lights.conf'), 'FORMAT=1\n');
+		await Bun.write(join(stick, '.smartify-os-new', 'export.conf'), 'half\n');
+		await Bun.write(join(stick, 'smartify-os', 'export.conf'), 'KIND=installer\n');
+		const result = await writeExport({ ...(await input('car')), kind: 'update' }, stick);
+		expect(await Bun.file(join(result.folder, 'devices', 'lights.conf')).text()).toBe('FORMAT=1\n');
+		expect(await readdir(stick)).toEqual(['smartify-os']);
+		expect((await readExistingExport(stick))?.kind).toBe('update');
+	});
+
 	test('puts the downloads on it, listed for linux.sh and checked like everything else', async () => {
 		const stick = join(dir, 'stick-downloads');
 		const cached = join(dir, 'cache', 'silero-vad');
