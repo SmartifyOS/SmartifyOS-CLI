@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
-import { chmod, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 
@@ -103,6 +103,29 @@ exit "\${FAKE_VISUDO:-0}"
 `,
 	'update-grub': `#!/bin/sh
 echo "update-grub" >>"$FAKE/log"
+`,
+	'dpkg-divert': `#!/bin/sh
+echo "dpkg-divert $*" >>"$FAKE/log"
+touch "$FAKE/diversions"
+root='' divert='' action='' file=''
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--root=*) root=\${1#--root=} ;;
+	--divert) divert=$2; shift ;;
+	--truename | --add) action=$1 ;;
+	--*) ;;
+	*) file=$1 ;;
+	esac
+	shift
+done
+case "$action" in
+--truename) awk -F'\\t' -v f="$file" '$1 == f { t = $2 } END { print t ? t : f }' "$FAKE/diversions" ;;
+--add)
+	[ -n "\${FAKE_DIVERT_FAILS:-}" ] && exit 2
+	printf '%s\\t%s\\n' "$file" "$divert" >>"$FAKE/diversions"
+	mv "$root$file" "$root$divert"
+	;;
+esac
 `,
 	'glib-compile-schemas': `#!/bin/sh
 echo "glib-compile-schemas $*" >>"$FAKE/log"
@@ -473,7 +496,37 @@ describe('linux.sh system', () => {
 		const grub = await file('etc/default/grub.d/smartify-os.cfg');
 		expect(grub).toContain('GRUB_TIMEOUT=0\n');
 		expect(grub).toContain('GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT quiet');
+		expect(grub).toContain(' console=tty3"');
 		expect(await file('etc/default/grub')).toBe('GRUB_CMDLINE_LINUX_DEFAULT="quiet"\n');
+		expect(await read('log')).toContain('update-grub');
+	});
+
+	test("moves Debian's GRUB script for Linux aside once, and runs it quiet", async () => {
+		const debian = '#!/bin/sh\nquiet_boot="0"\necho "$quiet_boot"\n';
+		await car({ files: { 'etc/default/grub': '', 'etc/grub.d/10_linux': debian } });
+		expect(setUpSystem().code).toBe(0);
+		expect(setUpSystem().code).toBe(0);
+		expect(await read('log')).toContain(`dpkg-divert --root=${sysroot} --quiet --local --rename`);
+		expect((await read('log')).match(/ --add /g)).toHaveLength(1);
+		expect(await file('etc/smartify-os/grub/10_linux')).toBe(debian);
+
+		const ours = join(sysroot, 'etc/grub.d/10_linux');
+		expect((await stat(ours)).mode & 0o111).toBe(0o111);
+		const wrapper = (await file('etc/grub.d/10_linux')).replaceAll(
+			' /etc/smartify-os/grub/10_linux',
+			` ${join(sysroot, 'etc/smartify-os/grub/10_linux')}`,
+		);
+		await Bun.write(ours, wrapper);
+		const run = Bun.spawnSync(['sh', ours]);
+		expect(run.stdout.toString()).toBe('1\n');
+	});
+
+	test("still sets the car up when GRUB's script for Linux cannot be moved aside", async () => {
+		await car({ files: { 'etc/default/grub': '', 'etc/grub.d/10_linux': 'quiet_boot="0"\n' } });
+		const { code, stderr } = setUpSystem({ FAKE_DIVERT_FAILS: '1' });
+		expect(code).toBe(0);
+		expect(stderr).toContain('could not be moved aside');
+		expect(await file('etc/grub.d/10_linux')).toBe('quiet_boot="0"\n');
 		expect(await read('log')).toContain('update-grub');
 	});
 
@@ -486,7 +539,7 @@ describe('linux.sh system', () => {
 		expect(setUpSystem().code).toBe(0);
 		expect(setUpSystem().code).toBe(0);
 		expect(await file('boot/firmware/cmdline.txt')).toBe(
-			'console=serial0,115200 console=tty1 root=PARTUUID=1234-02 rootwait quiet loglevel=3 vt.global_cursor_default=0 logo.nologo\n',
+			'console=serial0,115200 console=tty1 root=PARTUUID=1234-02 rootwait quiet loglevel=3 vt.global_cursor_default=0 console=tty3 logo.nologo\n',
 		);
 		const written = await file('boot/firmware/config.txt');
 		expect(written).toStartWith(config);

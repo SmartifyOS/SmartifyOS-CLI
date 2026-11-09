@@ -704,8 +704,14 @@ before_start=/usr/lib/smartify-os/before-start
 # A cursor theme whose every cursor is one transparent pixel, which is how there is none.
 hidden_cursor=smartify-os-hidden
 # Keeps the kernel's messages and the blinking text cursor off the screen while the car
-# starts. They are all still in the journal.
-quiet_boot_options='quiet loglevel=3 vt.global_cursor_default=0'
+# starts. console=tty3 sends whatever runs before SmartifyOS prints (above all the disk
+# check after a power cut, which prints even when told to be quiet) to a screen nobody
+# looks at, Ctrl+Alt+F3 with a keyboard. They are all still in the journal, and the disk
+# check in /run/initramfs/fsck.log.
+quiet_boot_options='quiet loglevel=3 vt.global_cursor_default=0 console=tty3'
+# GRUB's script for Linux, and where Debian's own is moved to (see boot_grub_quiet).
+grub_linux=/etc/grub.d/10_linux
+grub_linux_debian=/etc/smartify-os/grub/10_linux
 # Around what this adds to a file that is not its own, so the next run replaces it.
 block_start='# SmartifyOS: written by its installer, and replaced every time it runs'
 block_end='# SmartifyOS: end'
@@ -728,6 +734,11 @@ strip_block() {
 # systemctl on this machine, or offline on the one the tests stand in for.
 unit_ctl() {
 	if [ -n "$sysroot" ]; then systemctl --root="$sysroot" "$@"; else systemctl "$@"; fi
+}
+
+# dpkg-divert on this machine, or on the one the tests stand in for.
+divert_ctl() {
+	if [ -n "$sysroot" ]; then dpkg-divert --root="$sysroot" "$@"; else dpkg-divert "$@"; fi
 }
 
 system_sudo() {
@@ -1118,11 +1129,41 @@ GRUB_TIMEOUT_STYLE=hidden
 GRUB_GFXPAYLOAD_LINUX=keep
 GRUB_CMDLINE_LINUX_DEFAULT="\$GRUB_CMDLINE_LINUX_DEFAULT $quiet_boot_options"
 EOF
+	boot_grub_quiet
 	if ! command -v update-grub >/dev/null 2>&1; then
 		warn 'update-grub is missing, so the boot menu still shows until GRUB is updated.'
 	elif ! update-grub >&2; then
 		warn 'GRUB could not be updated, so the boot menu still shows.'
 	fi
+}
+
+# GRUB prints "Loading Linux" and "Loading initial ramdisk" while it starts Linux unless its
+# script for Linux was built quiet, which Ubuntu's is and Debian's is not, and there is no
+# setting for it. Changing Debian's script in place would have apt stop and ask about it at
+# the next GRUB update, with nobody there to answer. So dpkg-divert moves it aside, where
+# GRUB's updates go from then on, and the script in its place runs it quiet. If Debian ever
+# writes that line differently, it only prints again.
+boot_grub_quiet() {
+	if [ "$(divert_ctl --truename "$grub_linux")" != "$grub_linux_debian" ]; then
+		if [ ! -f "$sysroot$grub_linux" ]; then return; fi
+		mkdir -p "$sysroot$(dirname "$grub_linux_debian")"
+		if ! divert_ctl --quiet --local --rename --divert "$grub_linux_debian" --add "$grub_linux"; then
+			warn 'GRUB still prints a line or two while the car starts, since its script for Linux could not be moved aside.'
+			return
+		fi
+	fi
+	put_file "$grub_linux" 0755 <<EOF
+#!/bin/sh
+#
+# Written by the SmartifyOS installer, and again every time it runs.
+#
+# Runs Debian's own script for this, which dpkg-divert moved to $grub_linux_debian
+# so GRUB's updates go there, the way Ubuntu builds it: quiet, so the car's screen shows
+# no "Loading Linux" and "Loading initial ramdisk" while it starts.
+set -e
+script=\$(sed 's/^quiet_boot="0"\$/quiet_boot="1"/' $grub_linux_debian)
+exec sh -c "\$script" 10_linux "\$@"
+EOF
 }
 
 boot_raspberry_pi() {
