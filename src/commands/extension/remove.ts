@@ -4,7 +4,12 @@ import { tryChange, writeLinks, writePubspec } from '../../core/project/change.t
 import { carFiles, requireCar } from '../../core/project/find.ts';
 import { type SwitchResult, switchOffInFile } from '../../core/project/main-dart.ts';
 import { intro, outro } from '../../ui/output.ts';
-import { followSteps, readCarStep, renderChangeFailure } from '../../ui/project.ts';
+import {
+	followSteps,
+	readCarStep,
+	renderChangeFailure,
+	renderExistingErrors,
+} from '../../ui/project.ts';
 import { confirm, spinner } from '../../ui/prompt.ts';
 import { renderSwitchOff, switchData } from '../../ui/switch-on.ts';
 import { theme } from '../../ui/theme.ts';
@@ -63,12 +68,10 @@ export const extensionRemoveCommand: Command = {
 			onStep: followSteps(progress),
 		});
 
+		const titleOf = (name: string) => state.extensions.find((e) => e.name === name)?.title ?? name;
 		if (!result.ok) {
 			progress.error(`${extension.title} is still needed`);
-			renderChangeFailure(
-				result.failure,
-				(name) => state.extensions.find((e) => e.name === name)?.title ?? name,
-			);
+			renderChangeFailure(result.failure, titleOf);
 			const manual = switched?.kind === 'manual';
 			throw new CliError(`${extension.title} was not removed, nothing was changed.`, {
 				details: result.failure,
@@ -79,6 +82,7 @@ export const extensionRemoveCommand: Command = {
 		}
 
 		progress.stop(`Took ${theme.strong(extension.title)} out of your car`);
+		renderExistingErrors(result.existing, titleOf);
 		renderSwitchOff(switched);
 		outro('All done.');
 		return {

@@ -19,7 +19,13 @@ import {
 import { readPackageRoots } from '../../core/pubspec/read.ts';
 import { coreReleases } from '../../core/smartify-os.ts';
 import { intro, log, outro } from '../../ui/output.ts';
-import { followSteps, readCarStep, renderChangeFailure, step } from '../../ui/project.ts';
+import {
+	followSteps,
+	readCarStep,
+	renderChangeFailure,
+	renderExistingErrors,
+	step,
+} from '../../ui/project.ts';
 import { isInteractive, select, spinner, text } from '../../ui/prompt.ts';
 import { renderSwitchOn, switchData } from '../../ui/switch-on.ts';
 import { theme } from '../../ui/theme.ts';
@@ -137,6 +143,9 @@ export const extensionAddCommand: Command = {
 		const finalTitle = await titleOf(extension.packageName, root);
 		progress.stop(
 			`Added ${theme.strong(finalTitle)} ${theme.dim(extension.onBranch ? extension.source.ref : (extension.version ?? ''))}`,
+		);
+		renderExistingErrors(result.existing, (name) =>
+			name === extension.packageName ? finalTitle : name,
 		);
 		renderSwitchOn(switched, extension.packageName);
 		outro('All done. It is in your car the next time you run it.');

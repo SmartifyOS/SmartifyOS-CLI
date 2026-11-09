@@ -20,7 +20,13 @@ import {
 	neededOverrides,
 } from '../core/smartify-os.ts';
 import { intro, log, outro } from '../ui/output.ts';
-import { followSteps, readCarStep, renderChangeFailure, step } from '../ui/project.ts';
+import {
+	followSteps,
+	readCarStep,
+	renderChangeFailure,
+	renderExistingErrors,
+	step,
+} from '../ui/project.ts';
 import { confirm, note, spinner } from '../ui/prompt.ts';
 import { theme } from '../ui/theme.ts';
 import { CliError } from '../utils/errors.ts';
@@ -276,8 +282,10 @@ export async function moveCore(
 			onStep: followSteps(progress),
 		});
 
+		const titleOf = (name: string) => state.extensions.find((e) => e.name === name)?.title ?? name;
 		if (result.ok) {
 			progress.stop(`Moved to SmartifyOS ${label}`);
+			renderExistingErrors(result.existing, titleOf);
 			const extensions: MovedExtension[] = [];
 			for (const [name, extension] of moved) {
 				const installed = state.extensions.find((e) => e.name === name);
@@ -296,7 +304,6 @@ export async function moveCore(
 		}
 
 		progress.error(`SmartifyOS ${label} does not fit this car yet`);
-		const titleOf = (name: string) => state.extensions.find((e) => e.name === name)?.title ?? name;
 		const stay = `Your car stays on SmartifyOS ${describeVersion(state.core)}, nothing was changed.`;
 
 		const { failure } = result;

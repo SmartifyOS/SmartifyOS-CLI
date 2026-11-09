@@ -20,7 +20,11 @@ import { readLinks, renderOverrides } from './links.ts';
  * still work" is to fetch it and analyze it. On errors every file goes back as it was.
  */
 
-export type ChangeStep = 'fetch' | 'check' | 'undo';
+/**
+ * `compare` runs when the change has errors, to tell whether they were there before it. Only
+ * once they were not is the change taken back, `undo`.
+ */
+export type ChangeStep = 'fetch' | 'check' | 'compare' | 'undo';
 
 /** What is being changed, and how. */
 export interface Change {
@@ -64,6 +68,11 @@ export type ChangeResult =
 			ok: true;
 			/** What was written into the app's Android part for what it runs now. */
 			android?: AndroidSync;
+			/**
+			 * Errors the app already had before the change, by the package they are in, which
+			 * is why they did not stop it. Undefined when there were none.
+			 */
+			existing?: PackageProblems[];
 	  }
 	| { ok: false; failure: ChangeFailure };
 
@@ -132,17 +141,20 @@ export async function tryChange(app: CarApp, change: Change): Promise<ChangeResu
 	if (!result.ok) return result;
 	await switchOnFlutterGpu(app.dir);
 	const android = await syncAndroid(app.dir);
-	return android.android ? { ok: true, android } : result;
+	return android.android ? { ...result, android } : result;
 }
 
 /** Internal: {@link tryChange} without what follows a change that is kept. */
 async function tryChangeOnly(app: CarApp, change: Change): Promise<ChangeResult> {
 	const before = await snapshot(app);
 
-	const undo = async () => {
-		change.onStep?.('undo');
+	const putBack = async () => {
 		await restore(before);
 		await pubGet(app.dir);
+	};
+	const undo = async () => {
+		change.onStep?.('undo');
+		await putBack();
 	};
 
 	try {
@@ -187,7 +199,9 @@ async function tryChangeOnly(app: CarApp, change: Change): Promise<ChangeResult>
 	const errors = await checkBuild(app);
 	if (errors.length === 0) return { ok: true };
 
-	await undo();
+	// Not announced as taking it back yet: when every error was there before, it stays.
+	change.onStep?.('compare');
+	await putBack();
 	const already = new Set((await checkBuild(app)).map(problemKey));
 	const caused = errors.filter((problem) => !already.has(problemKey(problem)));
 
@@ -195,9 +209,10 @@ async function tryChangeOnly(app: CarApp, change: Change): Promise<ChangeResult>
 		// Every error was there before the change, so the change itself is fine.
 		await restore(after);
 		await pubGet(app.dir);
-		return { ok: true };
+		return { ok: true, existing: groupByPackage(errors) };
 	}
 
+	change.onStep?.('undo');
 	return { ok: false, failure: { kind: 'build', problems: groupByPackage(caused) } };
 }
 

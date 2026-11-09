@@ -6,7 +6,13 @@ import { requireCar } from '../../core/project/find.ts';
 import { newestFitting, type RemoteExtension } from '../../core/project/remote.ts';
 import { isReleaseTag } from '../../core/smartify-os.ts';
 import { intro, log, outro } from '../../ui/output.ts';
-import { followSteps, readCarStep, renderChangeFailure, step } from '../../ui/project.ts';
+import {
+	followSteps,
+	readCarStep,
+	renderChangeFailure,
+	renderExistingErrors,
+	step,
+} from '../../ui/project.ts';
 import { confirm, isInteractive, multiselect, spinner } from '../../ui/prompt.ts';
 import { theme } from '../../ui/theme.ts';
 import { CliError } from '../../utils/errors.ts';
@@ -135,6 +141,7 @@ export const extensionUpdateCommand: Command = {
 				progress.stop(
 					`Updated ${current.map((plan) => `${theme.strong(plan.extension.title)} to ${target(plan)}`).join(', ')}`,
 				);
+				renderExistingErrors(tried.existing, titleOf);
 				outro('All done.');
 				return result(available, current);
 			}
