@@ -14,6 +14,7 @@ import { runCommand } from './run.ts';
 import { selfUpdateCommand } from './self-update.ts';
 import { settingsCommand } from './settings.ts';
 import { setupCommand } from './setup.ts';
+import { tabletCommand } from './tablet.ts';
 import { unlinkCommand } from './unlink.ts';
 import { updateCommand } from './update.ts';
 
@@ -33,6 +34,7 @@ register(
 	updateCommand,
 	extensionCommand,
 	runCommand,
+	tabletCommand,
 	appearanceCommand,
 	aboutCommand,
 	configCommand,

@@ -1,8 +1,9 @@
 import { copyFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runOrThrow } from '../../core/process.ts';
+import { buildApk } from '../../core/android/apk.ts';
 import { requireCar } from '../../core/project/find.ts';
 import { prepareAndroid } from '../../ui/android.ts';
+import { nextSteps } from '../../ui/next-steps.ts';
 import { intro, outro } from '../../ui/output.ts';
 import { readCarStep, step } from '../../ui/project.ts';
 import { note } from '../../ui/prompt.ts';
@@ -10,9 +11,6 @@ import { theme } from '../../ui/theme.ts';
 import { binaryName } from '../flags.ts';
 import type { Command } from '../types.ts';
 import { pickTarget } from './shared.ts';
-
-/** Where Flutter puts the app it builds for Android. */
-const builtApk = join('build', 'app', 'outputs', 'flutter-apk', 'app-release.apk');
 
 /**
  * Builds the car's app for an Android tablet or phone, and puts the app file on a USB stick
@@ -38,18 +36,9 @@ export const exportAndroidCommand: Command = {
 		const sync = await prepareAndroid(state, flags.yes === true);
 		const target = await pickTarget(flags.to);
 
-		await step(
+		const apk = await step(
 			'Building it for Android (ten minutes or more the first time)',
-			() =>
-				runOrThrow(
-					'flutter',
-					['build', 'apk', '--release'],
-					{
-						message: "Your car's app did not build for Android.",
-						hint: 'The end of what Flutter printed says why:',
-					},
-					{ cwd: app.dir },
-				),
+			() => buildApk(app.dir),
 			() => 'Built it for Android',
 		);
 
@@ -57,7 +46,7 @@ export const exportAndroidCommand: Command = {
 		const file = join(target, `${name}.apk`);
 		await step(
 			'Putting it on the stick',
-			() => copyFile(join(app.dir, builtApk), file),
+			() => copyFile(apk, file),
 			() => `Written to ${theme.code(file)}`,
 		);
 		const size = (await stat(file)).size;
@@ -70,6 +59,12 @@ export const exportAndroidCommand: Command = {
 			].join('\n'),
 			'On the tablet',
 		);
+		nextSteps([
+			{
+				kind: 'tablet',
+				text: `To make the tablet start into it, plug it into this computer once and run ${theme.code(`${binaryName} tablet`)}.`,
+			},
+		]);
 		outro('All done.');
 		return { changed: true, file, size, android: sync.changed };
 	},

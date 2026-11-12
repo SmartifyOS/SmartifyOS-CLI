@@ -1,21 +1,20 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { type AndroidDevice, androidDevices, hasAdb } from '../core/android/sdk.ts';
+import type { AndroidDevice } from '../core/android/sdk.ts';
 import { headerPath } from '../core/device/network.ts';
 import { addPlatforms, desktopPlatform } from '../core/flutter.ts';
 import { requireCar } from '../core/project/find.ts';
 import { AppCallError, VmService, vmServiceAddress } from '../core/vm-service.ts';
-import { prepareAndroid } from '../ui/android.ts';
+import { pickAndroidDevice, prepareAndroid, tabletHint } from '../ui/android.ts';
 import { runAttached } from '../ui/attached.ts';
 import { ensureFlutterGpu } from '../ui/flutter-gpu.ts';
 import { takeCalls } from '../ui/json.ts';
 import { intro, log } from '../ui/output.ts';
 import { readCarStep, step } from '../ui/project.ts';
-import { select } from '../ui/prompt.ts';
 import { theme } from '../ui/theme.ts';
 import { CliError } from '../utils/errors.ts';
 import { binaryName } from './flags.ts';
-import type { Command, Flags } from './types.ts';
+import type { Command } from './types.ts';
 
 /**
  * Runs the car's app on this computer, as a debug build started from the app's folder.
@@ -49,7 +48,8 @@ export const runCommand: Command = {
 		let device: AndroidDevice | undefined;
 		if (onAndroid) {
 			await prepareAndroid(state, flags.yes === true);
-			device = await pickDevice(flags);
+			device = await pickAndroidDevice(flags.device);
+			await tabletHint(app.dir, device);
 		} else if (!existsSync(join(app.dir, platform))) {
 			const name = /^name:\s*(\S+)/m.exec(state.pubspecText)?.[1] ?? 'app';
 			await step(
@@ -99,42 +99,3 @@ export const runCommand: Command = {
 		};
 	},
 };
-
-/** Internal: the Android device to run on, by the flag, the only one, or by asking. */
-async function pickDevice(flags: Flags): Promise<AndroidDevice> {
-	const devices = await step(
-		'Looking for Android devices',
-		() => androidDevices(),
-		(found) =>
-			found.length === 1
-				? `Found ${found[0]?.name}`
-				: `Found ${found.length === 0 ? 'no' : found.length} Android devices`,
-	);
-	const given = typeof flags.device === 'string' ? flags.device.trim() : undefined;
-	if (given) {
-		const found = devices.find((d) => d.id === given || d.name === given);
-		if (found) return found;
-		throw new CliError(`There is no Android device ${given} plugged in.`, {
-			hint: devices.length
-				? `These are: ${devices.map((d) => `${d.name} (${d.id})`).join(', ')}.`
-				: 'Plug it in with a USB cable, with USB debugging switched on in its developer options.',
-		});
-	}
-	const [only] = devices;
-	if (devices.length === 1 && only) return only;
-	if (devices.length === 0) {
-		throw new CliError('No Android device is plugged into this computer.', {
-			hint: (await hasAdb())
-				? 'Plug it in with a USB cable and switch USB debugging on in its developer options (tap the build number in About seven times to show them). Then say yes to this computer on its screen.'
-				: `Running on Android needs the Android SDK. Run ${binaryName} setup --android, then plug the device in with USB debugging on.`,
-		});
-	}
-	return await select<AndroidDevice>({
-		message: 'Which Android device should it run on?',
-		options: devices.map((d) => ({
-			value: d,
-			label: d.name,
-			hint: d.emulator ? `an emulator, ${d.sdk}` : d.sdk,
-		})),
-	});
-}

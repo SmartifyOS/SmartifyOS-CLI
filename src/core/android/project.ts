@@ -14,8 +14,14 @@ import { type AndroidNeeds, collectAndroidNeeds, requesterNames } from './needs.
  *   of the manifest that is the CLI's, so one no package asks for any more goes again.
  * - The `minSdk` the packages ask for, as `maxOf(flutter.minSdkVersion, N)`, so Flutter's own
  *   is kept when it is higher. One the owner wrote that is high enough stays.
+ * - The app's `MainActivity` can be the tablet's home screen, so a car's tablet starts into
+ *   SmartifyOS and its home button goes back to it. Android asks once which home screen to
+ *   use, or `smartify-os tablet` sets it (src/core/android/tablet.ts). It also matters for
+ *   updates: once SmartifyOS updated itself from a stick, Android only starts a home screen
+ *   again by itself. A phone that only tries the app is asked too, and keeps its own.
  * - Flutter GPU switched on in the manifest, which the 3D car is drawn with (see
- *   `src/core/flutter-gpu.ts`, which does the same for the other platforms).
+ *   `src/core/flutter-gpu.ts`, which does the same for the other platforms). Core's own
+ *   manifest switches it on as well now, so this only matters for an older SmartifyOS.
  *
  * Every file is edited line by line, so anything else in it stays as it was.
  */
@@ -70,11 +76,13 @@ export async function syncAndroid(appDir: string): Promise<AndroidSync> {
 	for (const path of styleFiles) await edit(path, withFullScreenThemes);
 	await edit(manifestFile, (text) => {
 		const withNeeds = withPermissions(text, needs);
-		const withGpu = androidWithFlutterGpu(withNeeds);
+		const withHome = withHomeScreen(withNeeds);
+		if (withHome === undefined) manual.push(`${manifestFile}: ${homeScreenByHand}`);
+		const withGpu = androidWithFlutterGpu(withHome ?? withNeeds);
 		if (withGpu === undefined) {
 			manual.push(`${manifestFile}: ${androidFlutterGpuByHand}`);
 		}
-		return withGpu ?? withNeeds;
+		return withGpu ?? withHome ?? withNeeds;
 	});
 	for (const path of gradleFiles) {
 		await edit(path, (text) => {
@@ -104,6 +112,45 @@ export function withFullScreenThemes(text: string): string {
 		out = `${out.slice(0, start)}${lines.join('\n')}\n${out.slice(start)}`;
 	}
 	return out;
+}
+
+/** What to write into the manifest by hand when its launcher intent filter is not found. */
+export const homeScreenByHand =
+	"add an <intent-filter> with the action android.intent.action.MAIN and the categories android.intent.category.HOME and android.intent.category.DEFAULT to MainActivity, so it can be the tablet's home screen.";
+
+/**
+ * A manifest whose `MainActivity` can be the tablet's home screen: an intent filter with the
+ * HOME category, right after the launcher one. One there already is left alone, and
+ * `undefined` means there is no launcher intent filter to put it next to.
+ */
+export function withHomeScreen(text: string): string | undefined {
+	const activity = /<activity\b[^>]*android:name="[^"]*\.?MainActivity"[\s\S]*?<\/activity>/.exec(
+		text,
+	);
+	const scope = activity ? activity[0] : text;
+	if (scope.includes('android.intent.category.HOME')) return text;
+	const offset = activity?.index ?? 0;
+	const launcher = /android\.intent\.category\.LAUNCHER/.exec(scope);
+	if (!launcher) return undefined;
+	const close = scope.indexOf('</intent-filter>', launcher.index);
+	if (close === -1) return undefined;
+	const filterStart = scope.lastIndexOf('<intent-filter', launcher.index);
+	if (filterStart === -1) return undefined;
+	const lineStart = text.lastIndexOf('\n', offset + filterStart) + 1;
+	const indent = /^[ \t]*/.exec(text.slice(lineStart))?.[0] ?? '';
+	const closeEnd = text.indexOf('\n', offset + close);
+	const at = closeEnd === -1 ? text.length : closeEnd + 1;
+	const lines = [
+		"<!-- smartify-os: lets SmartifyOS be the tablet's home screen, which it starts into",
+		'     and the home button goes back to. Written by smartify-os. -->',
+		'<intent-filter>',
+		'    <action android:name="android.intent.action.MAIN" />',
+		'    <category android:name="android.intent.category.HOME" />',
+		'    <category android:name="android.intent.category.DEFAULT" />',
+		'</intent-filter>',
+	];
+	const added = lines.map((line) => `${indent}${line}\n`).join('');
+	return `${text.slice(0, at)}${closeEnd === -1 ? '\n' : ''}${added}${text.slice(at)}`;
 }
 
 /** The first line of the manifest's block that is the CLI's, and its last. */

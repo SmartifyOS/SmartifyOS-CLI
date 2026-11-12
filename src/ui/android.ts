@@ -1,8 +1,10 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { binaryName } from '../commands/flags.ts';
+import { readApplicationId } from '../core/android/apk.ts';
 import { type AndroidSync, syncAndroid } from '../core/android/project.ts';
-import { ensureCmake } from '../core/android/sdk.ts';
+import { type AndroidDevice, androidDevices, ensureCmake, hasAdb } from '../core/android/sdk.ts';
+import { findAdb, readTablet } from '../core/android/tablet.ts';
 import {
 	type AndroidSetUp,
 	type AndroidSetUpStep,
@@ -16,7 +18,7 @@ import { CliError } from '../utils/errors.ts';
 import { renderNeedProblems } from './linux.ts';
 import { log } from './output.ts';
 import { step } from './project.ts';
-import { confirm, isInteractive, spinner } from './prompt.ts';
+import { confirm, isInteractive, select, spinner } from './prompt.ts';
 import { theme } from './theme.ts';
 
 /**
@@ -102,7 +104,7 @@ export async function setUpAndroidStep(): Promise<AndroidSetUp> {
  * Before an Android build: installs what building for Android needs when something is
  * missing, once the owner says yes (or `--yes` did), and fails saying what to run otherwise.
  */
-async function ensureAndroidTools(yes: boolean): Promise<void> {
+export async function ensureAndroidTools(yes: boolean): Promise<void> {
 	const missing = missingAndroidTools(await findAndroidTools());
 	if (missing.length === 0) return;
 	const go =
@@ -125,4 +127,61 @@ function listed(items: string[]): string {
 	return items.length <= 1
 		? items.join('')
 		: `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
+}
+
+/** The Android device to use, by its id or name (`--device`), the only one, or by asking. */
+export async function pickAndroidDevice(flag: unknown, action = 'run on'): Promise<AndroidDevice> {
+	const devices = await step(
+		'Looking for Android devices',
+		() => androidDevices(),
+		(found) =>
+			found.length === 1
+				? `Found ${found[0]?.name}`
+				: `Found ${found.length === 0 ? 'no' : found.length} Android devices`,
+	);
+	const given = typeof flag === 'string' ? flag.trim() : undefined;
+	if (given) {
+		const found = devices.find((d) => d.id === given || d.name === given);
+		if (found) return found;
+		throw new CliError(`There is no Android device ${given} plugged in.`, {
+			hint: devices.length
+				? `These are: ${devices.map((d) => `${d.name} (${d.id})`).join(', ')}.`
+				: 'Plug it in with a USB cable, with USB debugging switched on in its developer options.',
+		});
+	}
+	const [only] = devices;
+	if (devices.length === 1 && only) return only;
+	if (devices.length === 0) {
+		throw new CliError('No Android device is plugged into this computer.', {
+			hint: (await hasAdb())
+				? 'Plug it in with a USB cable and switch USB debugging on in its developer options (tap the build number in About seven times to show them). Then say yes to this computer on its screen.'
+				: `Running on Android needs the Android SDK. Run ${binaryName} setup --android, then plug the device in with USB debugging on.`,
+		});
+	}
+	return await select<AndroidDevice>({
+		message: `Which Android device should it ${action}?`,
+		options: devices.map((d) => ({
+			value: d,
+			label: d.name,
+			hint: d.emulator ? `an emulator, ${d.sdk}` : d.sdk,
+		})),
+	});
+}
+
+/**
+ * Before running on a tablet: says once in a line how to make it start into the car's app,
+ * while it does not. Quiet for an emulator and when anything about it cannot be found out.
+ */
+export async function tabletHint(appDir: string, device: AndroidDevice): Promise<void> {
+	if (device.emulator) return;
+	try {
+		const tablet = { adb: await findAdb(), serial: device.id };
+		const state = await readTablet(tablet, await readApplicationId(appDir));
+		if (state.isHome) return;
+		log.info(
+			`Is ${theme.strong(device.name)} your car's screen? ${theme.code(`${binaryName} tablet`)} makes it start into your car's app.`,
+		);
+	} catch {
+		// Only a hint.
+	}
 }

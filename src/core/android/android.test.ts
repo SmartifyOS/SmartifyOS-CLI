@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { applicationIdIn } from './apk.ts';
 import { mergeAndroid, parseAndroid } from './needs.ts';
-import { withFullScreenThemes, withMinSdk, withPermissions } from './project.ts';
+import { withFullScreenThemes, withHomeScreen, withMinSdk, withPermissions } from './project.ts';
 import { cmakeVersionsIn } from './sdk.ts';
+import { componentsIn, deviceOwnerIn, ownerFailure } from './tablet.ts';
 import { commandLineToolsArchive, javaMajor, missingAndroidTools } from './tools.ts';
 
 const auto = { name: 'smartify_os_android_auto', title: 'Android Auto' };
@@ -242,5 +244,109 @@ describe('missingAndroidTools', () => {
 		expect(
 			missingAndroidTools({ ...ready, sdk: undefined, java: { home: '/jdk', version: 11 } }),
 		).toEqual(['the Android SDK', 'Java 17 or newer']);
+	});
+});
+
+const flutterManifest = `<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="my_car">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
+`;
+
+describe('withHomeScreen', () => {
+	test('lets MainActivity be the home screen, right after the launcher filter, once', () => {
+		const once = withHomeScreen(flutterManifest);
+		expect(once).toContain(
+			[
+				'                <category android:name="android.intent.category.LAUNCHER"/>',
+				'            </intent-filter>',
+				"            <!-- smartify-os: lets SmartifyOS be the tablet's home screen, which it starts into",
+			].join('\n'),
+		);
+		expect(once).toContain(
+			[
+				'            <intent-filter>',
+				'                <action android:name="android.intent.action.MAIN" />',
+				'                <category android:name="android.intent.category.HOME" />',
+				'                <category android:name="android.intent.category.DEFAULT" />',
+				'            </intent-filter>',
+				'        </activity>',
+			].join('\n'),
+		);
+		expect(withHomeScreen(once ?? '')).toBe(once);
+	});
+
+	test('leaves a manifest without a launcher filter to the owner', () => {
+		expect(withHomeScreen('<manifest>\n</manifest>\n')).toBeUndefined();
+	});
+});
+
+describe('applicationIdIn', () => {
+	test('reads Kotlin and Groovy, and nothing written as code', () => {
+		expect(applicationIdIn('    applicationId = "com.example.my_car"\n')).toBe(
+			'com.example.my_car',
+		);
+		expect(applicationIdIn("        applicationId 'dev.my_car'\n")).toBe('dev.my_car');
+		expect(applicationIdIn('        applicationId = ids.car\n')).toBeUndefined();
+	});
+});
+
+describe('the tablet', () => {
+	test('reads activities from query-activities and resolve-activity', () => {
+		expect(componentsIn('No activities found\n')).toEqual([]);
+		expect(
+			componentsIn(
+				'priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=true\ncom.android.launcher3/.uioverrides.QuickstepLauncher\n',
+			),
+		).toEqual(['com.android.launcher3/.uioverrides.QuickstepLauncher']);
+	});
+
+	test('reads the device owner from dumpsys and list-owners', () => {
+		expect(deviceOwnerIn('Current Device Policy Manager state:\n  Enabled Device Admins:\n')).toBe(
+			undefined,
+		);
+		expect(
+			deviceOwnerIn(
+				'  Device Owner: \n    admin=ComponentInfo{com.example.my_car/dev.smartify_os.core.SmartifyOsDeviceAdmin}\n    name=\n',
+			),
+		).toBe('com.example.my_car');
+		expect(
+			deviceOwnerIn(
+				'User 0: admin=com.example.my_car/dev.smartify_os.core.SmartifyOsDeviceAdmin,DeviceOwner',
+			),
+		).toBe('com.example.my_car');
+	});
+
+	test('says plainly why it could not become the owner', () => {
+		const accounts = ownerFailure(
+			"Exception occurred while executing 'set-device-owner':\njava.lang.IllegalStateException: Not allowed to set the device owner because there are already some accounts on the device.\n\tat com.android.server...",
+		);
+		expect(accounts.message).toContain('account');
+		expect(accounts.hint).toContain('factory settings');
+		expect(
+			ownerFailure(
+				'java.lang.IllegalStateException: Trying to set the device owner (a/b), but device owner (c/d) is already set.',
+			).message,
+		).toBe('Another app is already the owner of this tablet.');
+		expect(
+			ownerFailure('Not allowed to set the device owner because the device is already provisioned')
+				.hint,
+		).toContain('account');
+		expect(
+			ownerFailure('java.lang.IllegalArgumentException: Unknown admin: ComponentInfo{a/b}').hint,
+		).toContain('--install');
+		expect(ownerFailure('java.lang.SecurityException: something new').hint).toBe('something new');
 	});
 });
